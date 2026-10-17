@@ -9,12 +9,15 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+# Only needed on a fresh checkout:
+Copy-Item .env.example .env
+# Fill in DJANGO_SECRET_KEY and database values in .env.
 python manage.py migrate
 python manage.py seed_data
 python manage.py runserver
 ```
 
-SQLite is the default development database (`db.sqlite3`). PostgreSQL is supported by setting `DATABASE_URL=postgresql://user:password@host:5432/database`, or by setting `USE_POSTGRES=True` and the `POSTGRES_*` variables in `.env.example`. Environment variables must be supplied by the deployment environment; this project does not load or commit a `.env` file.
+SQLite is available for local development when PostgreSQL variables are not configured. PostgreSQL is selected by setting `DATABASE_URL=postgresql://user:password@host:5432/database`, or by providing `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, and `POSTGRES_PORT` in `.env`. The settings load `backend/.env` for local development without committing it; production should inject secrets through the deployment environment or a secret manager. When `DJANGO_DEBUG=False`, the app requires a non-wildcard `DJANGO_ALLOWED_HOSTS` value and a PostgreSQL database.
 
 ## Authentication
 
@@ -62,3 +65,7 @@ python manage.py test
 ```
 
 The test suite covers generation idempotency, difficulty/fallback selection, duplicate completion rewards, goal and streak rules, authorization, and timezone boundary behavior.
+
+## Production settings
+
+Set `DJANGO_DEBUG=False`, a strong `DJANGO_SECRET_KEY`, explicit `DJANGO_ALLOWED_HOSTS`, and either `DATABASE_URL` or the `POSTGRES_*` variables. Configure `DJANGO_SECURE_SSL_REDIRECT=True`, secure cookies, HSTS, and `DJANGO_USE_HTTPS_PROXY=True` when TLS terminates at a trusted reverse proxy. If the frontend is served from a separate origin, set `CORS_ALLOWED_ORIGINS` to exact HTTPS origins only.

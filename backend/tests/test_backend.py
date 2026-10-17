@@ -181,6 +181,34 @@ class BackendFlowTests(TestCase):
         )
         self.assertEqual(register.status_code, 201)
 
+    def test_logout_revokes_token(self):
+        login = APIClient().post(
+            "/api/auth/login/", {"email": self.user.email, "password": "strong-password-123"}, format="json"
+        )
+        token_client = APIClient()
+        token_client.credentials(HTTP_AUTHORIZATION=f"Token {login.data['token']}")
+
+        logout = token_client.post("/api/auth/logout/")
+
+        self.assertEqual(logout.status_code, 204)
+        self.assertEqual(token_client.get("/api/auth/me/").status_code, 401)
+
+    def test_login_rotates_existing_token(self):
+        first_login = APIClient().post(
+            "/api/auth/login/", {"email": self.user.email, "password": "strong-password-123"}, format="json"
+        )
+        second_login = APIClient().post(
+            "/api/auth/login/", {"email": self.user.email, "password": "strong-password-123"}, format="json"
+        )
+
+        old_token_client = APIClient()
+        old_token_client.credentials(HTTP_AUTHORIZATION=f"Token {first_login.data['token']}")
+        new_token_client = APIClient()
+        new_token_client.credentials(HTTP_AUTHORIZATION=f"Token {second_login.data['token']}")
+
+        self.assertEqual(old_token_client.get("/api/auth/me/").status_code, 401)
+        self.assertEqual(new_token_client.get("/api/auth/me/").status_code, 200)
+
     def test_catalog_and_progress_read_endpoints(self):
         challenge = self.client.get("/api/challenges/today/")
         self.assertEqual(challenge.status_code, 200)

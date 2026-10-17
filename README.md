@@ -94,12 +94,15 @@ cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+# Only needed on a fresh checkout:
+Copy-Item .env.example .env
+# Edit .env and set DJANGO_SECRET_KEY before continuing.
 python manage.py migrate
 python manage.py seed_data
 python manage.py runserver
 ```
 
-The API is available at `http://127.0.0.1:8000`.
+The API is available at `http://127.0.0.1:8000`. For PostgreSQL, set `USE_POSTGRES=True` and the real `POSTGRES_*` values in `.env`, or use a `DATABASE_URL`. The app will fail closed in production mode instead of silently using SQLite.
 
 If PowerShell blocks virtual-environment activation, use a terminal with an appropriate execution policy or run the Python executable directly from `backend\.venv\Scripts\python.exe`.
 
@@ -156,13 +159,14 @@ Run these commands from `backend/` with the virtual environment active:
 
 ## Configuration
 
-The backend reads configuration directly from process environment variables. It does not load `.env` files automatically. `backend/.env.example`, when present, is a reference only; do not commit credentials.
+The backend loads `backend/.env` for local development using `python-dotenv`. Production deployments should inject secrets through the process environment or a secret manager; never commit the real `.env` file. `backend/.env.example` is a reference template only.
 
 ### Backend variables
 
 | Variable | Description | Default |
 |---|---|---|
-| `DJANGO_SECRET_KEY` | Django signing key. Use a strong private value outside local development. | Insecure development key |
+| `DJANGO_SECRET_KEY` | Django signing key. Use a strong private value outside local development. | Required |
+| `DJANGO_LOAD_DOTENV` | Loads `backend/.env` for local development. Disable it when deployment injects all variables directly. | `True` |
 | `DJANGO_DEBUG` | Enables debug mode for values `1`, `true`, or `yes`. | `True` |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated allowed hostnames. | `*` |
 | `DATABASE_URL` | PostgreSQL URL beginning with `postgres://` or `postgresql://`. | SQLite |
@@ -172,6 +176,13 @@ The backend reads configuration directly from process environment variables. It 
 | `POSTGRES_PASSWORD` | PostgreSQL password. | Empty |
 | `POSTGRES_HOST` | PostgreSQL host. | `localhost` |
 | `POSTGRES_PORT` | PostgreSQL port. | `5432` |
+| `DJANGO_USE_HTTPS_PROXY` | Trust `X-Forwarded-Proto` from a TLS-terminating reverse proxy. | `False` |
+| `DJANGO_SECURE_SSL_REDIRECT` | Redirect HTTP to HTTPS. Defaults to enabled when debug is off. | Depends on `DJANGO_DEBUG` |
+| `DJANGO_SESSION_COOKIE_SECURE` | Send Django admin/session cookies only over HTTPS. | Depends on `DJANGO_DEBUG` |
+| `DJANGO_CSRF_COOKIE_SECURE` | Send CSRF cookies only over HTTPS. | Depends on `DJANGO_DEBUG` |
+| `DJANGO_SECURE_HSTS_SECONDS` | HSTS duration in seconds. | `31536000` when debug is off, otherwise `0` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Comma-separated HTTPS origins allowed for CSRF-protected requests. | Empty |
+| `CORS_ALLOWED_ORIGINS` | Exact frontend origins allowed to call `/api/`. | Empty |
 
 Example PowerShell configuration:
 
@@ -191,7 +202,7 @@ $env:VITE_API_URL = "https://api.example.com/api"
 npm run build
 ```
 
-If it is not set, the frontend uses `/api`, which works with the Vite development proxy and with a same-origin deployment. A separate API origin requires appropriate CORS configuration on the backend.
+If it is not set, the frontend uses `/api`, which works with the Vite development proxy and with a same-origin deployment. A separate API origin requires `CORS_ALLOWED_ORIGINS` to contain the exact HTTPS frontend origin.
 
 ## Frontend routes
 
