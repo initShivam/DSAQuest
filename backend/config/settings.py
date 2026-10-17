@@ -23,16 +23,21 @@ def env_list(name, default=""):
 
 
 DEBUG = env_bool("DJANGO_DEBUG", default=False)
+DEPLOYMENT_HOST = "dsaquest.onrender.com"
+FRONTEND_ORIGIN = "https://dsaquestt.vercel.app"
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "").strip()
 if not SECRET_KEY:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set.")
 
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS")
-if not ALLOWED_HOSTS:
-    if DEBUG:
-        ALLOWED_HOSTS = ["dsaquest.onrender.com","localhost", "127.0.0.1", "[::1]"]
-    else:
-        raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must be set when DJANGO_DEBUG=False.")
+configured_allowed_hosts = env_list("DJANGO_ALLOWED_HOSTS")
+if configured_allowed_hosts:
+    # Keep the public Render hostname enabled even when an older or local
+    # DJANGO_ALLOWED_HOSTS value is still present in the service settings.
+    ALLOWED_HOSTS = list(dict.fromkeys([*configured_allowed_hosts, DEPLOYMENT_HOST]))
+elif not DEBUG:
+    raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must be set when DJANGO_DEBUG=False.")
+else:
+    ALLOWED_HOSTS = [DEPLOYMENT_HOST, "localhost", "127.0.0.1", "[::1]"]
 if not DEBUG and "*" in ALLOWED_HOSTS:
     raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS cannot contain '*' when DJANGO_DEBUG=False.")
 
@@ -135,12 +140,12 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
 
-CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
-CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys([FRONTEND_ORIGIN, *env_list("DJANGO_CSRF_TRUSTED_ORIGINS")]))
+CORS_ALLOWED_ORIGINS = list(dict.fromkeys([FRONTEND_ORIGIN, *env_list("CORS_ALLOWED_ORIGINS")]))
 CORS_URLS_REGEX = r"^/api/.*$"
 
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", default=not DEBUG)
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if env_bool("DJANGO_USE_HTTPS_PROXY", default=False) else None
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if env_bool("DJANGO_USE_HTTPS_PROXY", default=not DEBUG) else None
 SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", default=not DEBUG)
 CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", default=not DEBUG)
 SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_SECURE_HSTS_SECONDS", "31536000" if not DEBUG else "0"))

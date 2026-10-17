@@ -68,7 +68,7 @@ The test suite covers generation idempotency, difficulty/fallback selection, dup
 
 ## Production settings
 
-Set `DJANGO_DEBUG=False`, a strong `DJANGO_SECRET_KEY`, explicit `DJANGO_ALLOWED_HOSTS`, and either `DATABASE_URL` or the `POSTGRES_*` variables. Configure `DJANGO_SECURE_SSL_REDIRECT=True`, secure cookies, HSTS, and `DJANGO_USE_HTTPS_PROXY=True` when TLS terminates at a trusted reverse proxy. If the frontend is served from a separate origin, set `CORS_ALLOWED_ORIGINS` to exact HTTPS origins only.
+Set `DJANGO_DEBUG=False`, a strong `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS` (including `dsaquest.onrender.com`), and either `DATABASE_URL` or the `POSTGRES_*` variables. Configure `DJANGO_SECURE_SSL_REDIRECT=True`, secure cookies, HSTS, and `DJANGO_USE_HTTPS_PROXY=True` when TLS terminates at a trusted reverse proxy. The deployed settings include the known frontend origin `https://dsaquestt.vercel.app`; add any additional exact HTTPS origins through `CORS_ALLOWED_ORIGINS` and `DJANGO_CSRF_TRUSTED_ORIGINS`.
 
 ## Render deployment
 
@@ -80,4 +80,4 @@ Pre-deploy Command: python manage.py migrate
 Start Command: gunicorn --bind 0.0.0.0:$PORT config.wsgi:application
 ```
 
-If the Render service keeps the repository root as its working directory, use `pip install -r backend/requirements.txt` instead, but setting the root directory to `backend` is recommended. Add `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS` (including the Render hostname), `DATABASE_URL`, and the frontend origin variables in Render's environment settings.
+If the Render service keeps the repository root as its working directory, use `pip install -r backend/requirements.txt` instead, but setting the root directory to `backend` is recommended. Add `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS=dsaquest.onrender.com`, `DATABASE_URL`, and `DJANGO_USE_HTTPS_PROXY=True` in Render's environment settings. The API URL used by Vercel should be `https://dsaquest.onrender.com/api` (the frontend also normalizes the host-only value to this path).

@@ -167,8 +167,8 @@ The backend loads `backend/.env` for local development using `python-dotenv`. Pr
 |---|---|---|
 | `DJANGO_SECRET_KEY` | Django signing key. Use a strong private value outside local development. | Required |
 | `DJANGO_LOAD_DOTENV` | Loads `backend/.env` for local development. Disable it when deployment injects all variables directly. | `True` |
-| `DJANGO_DEBUG` | Enables debug mode for values `1`, `true`, or `yes`. | `True` |
-| `DJANGO_ALLOWED_HOSTS` | Comma-separated allowed hostnames. | `*` |
+| `DJANGO_DEBUG` | Enables debug mode for values `1`, `true`, or `yes`. | `False` |
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated allowed hostnames. Production must include `dsaquest.onrender.com`. | Required in production |
 | `DATABASE_URL` | PostgreSQL URL beginning with `postgres://` or `postgresql://`. | SQLite |
 | `USE_POSTGRES` | Enables the separate `POSTGRES_*` configuration when truthy. | Disabled |
 | `POSTGRES_DB` | PostgreSQL database name. | — |
@@ -202,7 +202,7 @@ $env:VITE_API_URL = "https://api.example.com/api"
 npm run build
 ```
 
-If it is not set, the frontend uses `/api`, which works with the Vite development proxy and with a same-origin deployment. A separate API origin requires `CORS_ALLOWED_ORIGINS` to contain the exact HTTPS frontend origin.
+If it is not set, the frontend uses `/api`, which works with the Vite development proxy and with a same-origin deployment. A separate API origin should be set to `https://dsaquest.onrender.com/api`; a host-only value is normalized to that API path. The backend allows the exact frontend origin `https://dsaquestt.vercel.app` and additional origins must be listed explicitly in `CORS_ALLOWED_ORIGINS`.
 
 ## Frontend routes
 

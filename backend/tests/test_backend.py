@@ -1,9 +1,12 @@
 from datetime import date, datetime, timedelta, timezone as datetime_timezone
 
+from django.conf import settings
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
+from django.urls import Resolver404, resolve
 from rest_framework.test import APIClient
 
+from accounts.views import LoginView
 from accounts.models import User
 from catalog.models import Pattern, Question, QuestionPattern
 from challenges.models import DailyChallenge, DailyChallengeQuestion
@@ -11,6 +14,30 @@ from challenges.services import generate_daily_challenge
 from challenges.utils import local_date_for_user
 from progress.models import DailyActivity, UserQuestionProgress, XPTransaction
 from progress.services import complete_assigned_question, current_streak
+
+
+class DeploymentConfigurationTests(SimpleTestCase):
+    def test_render_hostname_is_allowed(self):
+        self.assertIn(settings.DEPLOYMENT_HOST, settings.ALLOWED_HOSTS)
+        response = self.client.get("/api/auth/login/", HTTP_HOST=settings.DEPLOYMENT_HOST)
+        self.assertEqual(response.status_code, 405)
+
+    def test_login_route_is_prefixed_with_api(self):
+        self.assertIs(resolve("/api/auth/login/").func.view_class, LoginView)
+        with self.assertRaises(Resolver404):
+            resolve("/auth/login/")
+
+    def test_frontend_preflight_is_allowed_for_api_route(self):
+        response = self.client.options(
+            "/api/auth/login/",
+            HTTP_HOST=settings.DEPLOYMENT_HOST,
+            HTTP_ORIGIN=settings.FRONTEND_ORIGIN,
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="content-type",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Access-Control-Allow-Origin"], settings.FRONTEND_ORIGIN)
 
 
 class BackendFlowTests(TestCase):

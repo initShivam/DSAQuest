@@ -13,8 +13,16 @@ import type {
 
 // Keep local development same-origin so Vite can proxy API calls without a
 // separate CORS configuration. Production builds should provide VITE_API_URL
-// when the API is hosted on another origin.
-const API_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+// when the API is hosted on another origin. Accepting the backend origin
+// without /api prevents a common deployment misconfiguration from producing
+// requests to /auth/*, which is not a Django route in this application.
+function normalizeApiUrl(value?: string) {
+  const configured = (value || "/api").trim().replace(/\/$/, "");
+  if (/^https?:\/\/[^/]+$/i.test(configured)) return `${configured}/api`;
+  return configured || "/api";
+}
+
+const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL);
 const TOKEN_KEY = "dsa-quest-token";
 
 export class ApiError extends Error {
