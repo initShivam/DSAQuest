@@ -69,3 +69,15 @@ The test suite covers generation idempotency, difficulty/fallback selection, dup
 ## Production settings
 
 Set `DJANGO_DEBUG=False`, a strong `DJANGO_SECRET_KEY`, explicit `DJANGO_ALLOWED_HOSTS`, and either `DATABASE_URL` or the `POSTGRES_*` variables. Configure `DJANGO_SECURE_SSL_REDIRECT=True`, secure cookies, HSTS, and `DJANGO_USE_HTTPS_PROXY=True` when TLS terminates at a trusted reverse proxy. If the frontend is served from a separate origin, set `CORS_ALLOWED_ORIGINS` to exact HTTPS origins only.
+
+## Render deployment
+
+Create the Render web service from the repository root, then set its **Root Directory** to `backend`. Use these commands:
+
+```text
+Build Command: pip install -r requirements.txt
+Pre-deploy Command: python manage.py migrate
+Start Command: gunicorn --bind 0.0.0.0:$PORT config.wsgi:application
+```
+
+If the Render service keeps the repository root as its working directory, use `pip install -r backend/requirements.txt` instead, but setting the root directory to `backend` is recommended. Add `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS` (including the Render hostname), `DATABASE_URL`, and the frontend origin variables in Render's environment settings.
