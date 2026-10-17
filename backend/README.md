@@ -72,7 +72,7 @@ Set `DJANGO_DEBUG=False`, a strong `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS` (
 
 ## Render deployment
 
-Create the Render web service from the repository root, then set its **Root Directory** to `backend`. Use these commands:
+Create the Render web service from the repository root, then set its **Root Directory** to `backend`. If the service supports a pre-deploy command, use:
 
 ```text
 Build Command: pip install -r requirements.txt
@@ -80,4 +80,30 @@ Pre-deploy Command: python manage.py migrate
 Start Command: gunicorn --bind 0.0.0.0:$PORT config.wsgi:application
 ```
 
+On Render's free plan, where the pre-deploy command is unavailable, keep the same build command and use this **Start Command** instead:
+
+```sh
+python manage.py migrate --noinput && gunicorn --bind 0.0.0.0:$PORT config.wsgi:application
+```
+
+The `&&` is Render's Linux shell syntax: Gunicorn starts only if migrations succeed. Both commands run from `backend/` with the same service environment and `config.settings`, so they use the same database configuration. Keep `DJANGO_SETTINGS_MODULE` unset or set to `config.settings`, and do not provide a separate database override just for migrations. Do not run migrations during the dependency build or generate migrations on Render.
+
+This fallback runs the migration check on each start. Applied migrations are not reapplied. For multiple instances or future schema changes requiring a coordinated rollout, use a single migration job before starting the new application instances rather than concurrent startup migrations.
+
 If the Render service keeps the repository root as its working directory, use `pip install -r backend/requirements.txt` instead, but setting the root directory to `backend` is recommended. Add `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS=dsaquest.onrender.com`, `DATABASE_URL`, and `DJANGO_USE_HTTPS_PROXY=True` in Render's environment settings. The API URL used by Vercel should be `https://dsaquest.onrender.com/api` (the frontend also normalizes the host-only value to this path).
+
+### Migration verification and missing user table
+
+`accounts/migrations/0001_initial.py` already creates the custom `accounts.User` model and its `accounts_user` table. Do not generate a replacement migration merely because the production table is missing.
+
+Before repairing a missing table, use the deployed service's environment to confirm the intended Neon branch/database privately, inspect the PostgreSQL schema read-only (including `search_path`), and compare it with:
+
+```sh
+python manage.py showmigrations accounts
+python manage.py showmigrations
+python manage.py migrate --plan
+```
+
+If a migration is recorded as applied but its table is absent, or its table exists without the corresponding migration record, stop and investigate the mismatch. Do not reset the database, manually create tables, or use `--fake` / `--fake-initial` as a shortcut. Take a recoverable backup before an approved production migration.
+
+After a successful deployment, `showmigrations accounts` should show `[X] 0001_initial`. Check for pending migrations with `python manage.py migrate --check` and confirm that the user table is visible to the runtime database connection; the migration record alone does not prove the schema exists. Finally, verify `POST /api/auth/login/` with an existing valid account and check that Render no longer reports `relation "accounts_user" does not exist`. Migrations create schema, not user accounts, so a new database still requires registration.
