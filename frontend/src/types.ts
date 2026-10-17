@@ -7,6 +7,12 @@ export interface User {
   challenge_mode: string;
   timezone: string;
   date_joined: string;
+  email_verified: boolean;
+}
+
+export interface RegistrationResult {
+  verification_required: boolean;
+  email: string;
 }
 
 export interface Level {

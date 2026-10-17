@@ -32,6 +32,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     date_joined = models.DateTimeField(default=django_timezone.now)
+    email_verified_at = models.DateTimeField(blank=True, null=True)
 
     objects = UserManager()
 
@@ -40,6 +41,10 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.display_name or self.email
+
+    @property
+    def email_verified(self):
+        return self.email_verified_at is not None
 
     def clean(self):
         super().clean()

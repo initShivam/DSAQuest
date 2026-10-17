@@ -24,7 +24,8 @@ def env_list(name, default=""):
 
 DEBUG = env_bool("DJANGO_DEBUG", default=False)
 DEPLOYMENT_HOST = "dsaquest.onrender.com"
-FRONTEND_ORIGIN = "https://dsaquestt.vercel.app"
+FRONTEND_ORIGIN = os.getenv("PUBLIC_FRONTEND_URL", "https://dsaquestt.vercel.app").strip().rstrip("/") or "https://dsaquestt.vercel.app"
+PUBLIC_FRONTEND_URL = FRONTEND_ORIGIN
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "").strip()
 if not SECRET_KEY:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set.")
@@ -157,7 +158,7 @@ X_FRAME_OPTIONS = "DENY"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        "accounts.authentication.EmailVerifiedTokenAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
@@ -166,5 +167,22 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "auth_login": os.getenv("AUTH_LOGIN_RATE", "5/min"),
         "auth_register": os.getenv("AUTH_REGISTER_RATE", "3/hour"),
+        "auth_verification": os.getenv("AUTH_VERIFICATION_RATE", "3/hour"),
+        "auth_password_reset": os.getenv("AUTH_PASSWORD_RESET_RATE", "3/hour"),
     },
 }
+
+PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600"))
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", default=not DEBUG)
+EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", default=False)
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@dsaquest.onrender.com")
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    raise ImproperlyConfigured("EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be enabled.")

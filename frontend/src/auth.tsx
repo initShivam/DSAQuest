@@ -1,12 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError, api, clearToken, hasToken, setUnauthorizedHandler, storeToken, TOKEN_KEY } from "./api";
-import type { User } from "./types";
+import type { RegistrationResult, User } from "./types";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<User>;
-  signUp: (body: { email: string; password: string; display_name: string; timezone: string; challenge_mode: string }) => Promise<User>;
+  signUp: (body: { email: string; password: string; confirm_password: string; display_name: string; timezone: string; challenge_mode: string }) => Promise<RegistrationResult>;
   updateUser: (user: User) => void;
   signOut: () => Promise<void>;
 }
@@ -76,9 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     signUp: async (body) => {
       const response = await api.register(body);
-      storeToken(response.token);
-      setUser(response.user);
-      return response.user;
+      return response;
     },
     updateUser: setUser,
     signOut: async () => {

@@ -8,7 +8,7 @@ The current MVP uses a curated question catalog and user-reported completion. It
 
 ## What is included
 
-- Email/password registration, login, logout, and profile preferences.
+- Email/password registration with email verification, login, logout, password recovery, and profile preferences.
 - Daily challenges with two mandatory questions and an optional bonus question.
 - Difficulty modes: Beginner, Balanced, Intermediate, Advanced, and Adaptive.
 - Curated questions grouped by DSA patterns and estimated solving time.
@@ -39,7 +39,7 @@ The current MVP uses a curated question catalog and user-reported completion. It
 
 ### Main backend apps
 
-- `accounts` — custom user model, authentication, and profile settings.
+- `accounts` — custom user model, email verification, password recovery, authentication, and profile settings.
 - `catalog` — questions, patterns, and question-pattern relationships.
 - `challenges` — daily challenge generation and assignments.
 - `progress` — completion records, streaks, XP, achievements, and analytics.
@@ -183,6 +183,13 @@ The backend loads `backend/.env` for local development using `python-dotenv`. Pr
 | `DJANGO_SECURE_HSTS_SECONDS` | HSTS duration in seconds. | `31536000` when debug is off, otherwise `0` |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | Comma-separated HTTPS origins allowed for CSRF-protected requests. | Empty |
 | `CORS_ALLOWED_ORIGINS` | Exact frontend origins allowed to call `/api/`. | Empty |
+| `PUBLIC_FRONTEND_URL` | HTTPS frontend origin used in verification and password-reset links. | `https://dsaquestt.vercel.app` |
+| `PASSWORD_RESET_TIMEOUT` | Lifetime of verification and password-reset links, in seconds. | `3600` |
+| `EMAIL_BACKEND` | Django email backend. Use SMTP in production. | Console in debug, SMTP otherwise |
+| `EMAIL_HOST` / `EMAIL_PORT` | SMTP server and port. | Empty / `587` |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | SMTP credentials. Keep them only in Render secrets. | Empty |
+| `EMAIL_USE_TLS` / `EMAIL_USE_SSL` | SMTP transport security. Enable exactly one in production. | TLS follows debug mode / `False` |
+| `DEFAULT_FROM_EMAIL` | Sender address for verification and reset mail. | `no-reply@dsaquest.onrender.com` |
 
 Example PowerShell configuration:
 
@@ -217,6 +224,9 @@ The frontend uses the browser History API and renders these paths from the app s
 | `/achievements` | Achievement progress |
 | `/history` | Completion and XP history |
 | `/profile` | Profile and challenge preferences |
+| `/forgot-password` | Request a password reset link |
+| `/reset-password?uid=...&token=...` | Set a new password from a reset link |
+| `/verify-email?uid=...&token=...` | Verify an account email address |
 
 The frontend stores the DRF token in browser `localStorage` under `dsa-quest-token` and the selected theme under `dsa-quest-theme`.
 
@@ -234,11 +244,15 @@ Authorization: Token <token>
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/auth/register/` | Create an account. Returns `{token, user}`. |
+| `POST` | `/api/auth/register/` | Create a pending account and send a verification email. |
 | `POST` | `/api/auth/login/` | Authenticate with email and password. |
 | `POST` | `/api/auth/logout/` | Delete the current user token. |
 | `GET` | `/api/auth/me/` | Read the authenticated profile. |
 | `PATCH` | `/api/auth/me/` | Update display name, timezone, or challenge mode. |
+| `POST` | `/api/auth/email/verify/` | Consume a verification link. |
+| `POST` | `/api/auth/email/resend/` | Request a new verification email with a generic response. |
+| `POST` | `/api/auth/password-reset/request/` | Request a reset email with a generic response. |
+| `POST` | `/api/auth/password-reset/confirm/` | Consume a reset link and set a new password. |
 
 Registration example:
 
@@ -249,6 +263,7 @@ Content-Type: application/json
 {
   "email": "you@example.com",
   "password": "a-strong-password",
+  "confirm_password": "a-strong-password",
   "display_name": "You",
   "timezone": "Asia/Kolkata",
   "challenge_mode": "balanced"

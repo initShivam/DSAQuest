@@ -21,20 +21,29 @@ SQLite is available for local development when PostgreSQL variables are not conf
 
 ## Authentication
 
-The API uses DRF token authentication. Register or log in, then send:
+The API uses DRF token authentication. New registrations must verify their email before login. After verification, log in and send:
 
 ```text
 Authorization: Token <token>
 ```
 
-Registration and login return a token and user object:
+Registration returns a generic verification-required response. Login returns a token and user object:
 
 ```http
 POST /api/auth/register/
 Content-Type: application/json
 
-{"email":"you@example.com","password":"a-strong-password","display_name":"You","timezone":"Asia/Kolkata","challenge_mode":"balanced"}
+{"email":"you@example.com","password":"a-strong-password","confirm_password":"a-strong-password","display_name":"You","timezone":"Asia/Kolkata","challenge_mode":"balanced"}
 ```
+
+Authentication recovery endpoints:
+
+- `POST /api/auth/email/verify/` with `uid` and `token` from the verification link.
+- `POST /api/auth/email/resend/` with an email address. The response is generic to avoid account enumeration.
+- `POST /api/auth/password-reset/request/` with an email address. The response is generic to avoid account enumeration.
+- `POST /api/auth/password-reset/confirm/` with `uid`, `token`, `new_password`, and `confirm_password`.
+
+Verification and reset links are generated for `PUBLIC_FRONTEND_URL`. Password reset links use Django's signed password-reset token generator and expire after `PASSWORD_RESET_TIMEOUT` seconds. Verification links use a signed Django token and become invalid once the account is verified.
 
 ## API surface
 
@@ -69,6 +78,23 @@ The test suite covers generation idempotency, difficulty/fallback selection, dup
 ## Production settings
 
 Set `DJANGO_DEBUG=False`, a strong `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS` (including `dsaquest.onrender.com`), and either `DATABASE_URL` or the `POSTGRES_*` variables. Configure `DJANGO_SECURE_SSL_REDIRECT=True`, secure cookies, HSTS, and `DJANGO_USE_HTTPS_PROXY=True` when TLS terminates at a trusted reverse proxy. The deployed settings include the known frontend origin `https://dsaquestt.vercel.app`; add any additional exact HTTPS origins through `CORS_ALLOWED_ORIGINS` and `DJANGO_CSRF_TRUSTED_ORIGINS`.
+
+Email delivery is configured through environment variables. Local development can use `django.core.mail.backends.console.EmailBackend`; production must use a real SMTP provider and must never commit its credentials:
+
+```text
+PUBLIC_FRONTEND_URL=https://dsaquestt.vercel.app
+PASSWORD_RESET_TIMEOUT=3600
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.example.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=<provider-user>
+EMAIL_HOST_PASSWORD=<provider-password>
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+DEFAULT_FROM_EMAIL=no-reply@your-domain.example
+```
+
+Use either TLS or SSL, not both. Render must receive these values in its environment settings. Email delivery cannot be verified locally with the console backend; a real provider and a real mailbox are required for end-to-end production verification.
 
 ## Render deployment
 

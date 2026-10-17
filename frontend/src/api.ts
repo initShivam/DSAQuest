@@ -9,6 +9,7 @@ import type {
   Question,
   User,
   XPHistoryData,
+  RegistrationResult,
 } from "./types";
 
 // Keep local development same-origin so Vite can proxy API calls without a
@@ -73,12 +74,12 @@ function detailFromPayload(payload: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, includeAuth = true): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
   if (options.body) headers.set("Content-Type", "application/json");
-  const token = getStoredToken();
-  if (token) headers.set("Authorization", `Token ${token}`);
+  const token = includeAuth ? getStoredToken() : null;
+  if (includeAuth && token) headers.set("Authorization", `Token ${token}`);
 
   let response: Response;
   const controller = new AbortController();
@@ -143,13 +144,21 @@ async function requestAll<T>(path: string): Promise<T[]> {
 
 export const api = {
   login: (body: { email: string; password: string }) =>
-    request<{ token: string; user: User }>("/auth/login/", { method: "POST", body: JSON.stringify(body) }),
-  register: (body: { email: string; password: string; display_name: string; timezone: string; challenge_mode: string }) =>
-    request<{ token: string; user: User }>("/auth/register/", { method: "POST", body: JSON.stringify(body) }),
+    request<{ token: string; user: User }>("/auth/login/", { method: "POST", body: JSON.stringify(body) }, false),
+  register: (body: { email: string; password: string; confirm_password: string; display_name: string; timezone: string; challenge_mode: string }) =>
+    request<RegistrationResult>("/auth/register/", { method: "POST", body: JSON.stringify(body) }, false),
   logout: () => request<null>("/auth/logout/", { method: "POST" }),
   me: () => request<User>("/auth/me/"),
   updateMe: (body: Partial<Pick<User, "display_name" | "timezone" | "challenge_mode">>) =>
     request<User>("/auth/me/", { method: "PATCH", body: JSON.stringify(body) }),
+  resendVerification: (email: string) =>
+    request<{ detail: string }>("/auth/email/resend/", { method: "POST", body: JSON.stringify({ email }) }, false),
+  verifyEmail: (uid: string, token: string) =>
+    request<{ detail: string; already_verified?: boolean }>("/auth/email/verify/", { method: "POST", body: JSON.stringify({ uid, token }) }, false),
+  requestPasswordReset: (email: string) =>
+    request<{ detail: string }>("/auth/password-reset/request/", { method: "POST", body: JSON.stringify({ email }) }, false),
+  resetPassword: (body: { uid: string; token: string; new_password: string; confirm_password: string }) =>
+    request<{ detail: string }>("/auth/password-reset/confirm/", { method: "POST", body: JSON.stringify(body) }, false),
   dashboard: () => request<DashboardData>("/dashboard/"),
   today: () => request<DailyChallenge>("/challenges/today/"),
   generateChallenge: () => request<DailyChallenge>("/challenges/generate/", { method: "POST" }),

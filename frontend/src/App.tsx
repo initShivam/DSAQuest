@@ -50,7 +50,9 @@ type IconName =
   | "spark"
   | "book"
   | "sliders"
-  | "info";
+  | "info"
+  | "eye"
+  | "eyeOff";
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
@@ -82,6 +84,8 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     book: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z" /><path d="M4 5.5v15" /><path d="M8 7h8M8 11h8" /></>,
     sliders: <><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="9" cy="6" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="11" cy="18" r="2" /></>,
     info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 8h.01" /></>,
+    eye: <><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /></>,
+    eyeOff: <><path d="m3 3 18 18" /><path d="M10.6 6.2A10.8 10.8 0 0 1 12 6c6 0 9.5 6 9.5 6a16.8 16.8 0 0 1-3 3.6" /><path d="M6.2 6.8C3.8 8.5 2.5 12 2.5 12s3.5 6 9.5 6c1.2 0 2.3-.2 3.3-.6" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
@@ -206,37 +210,23 @@ function useLoad<T>(loader: () => Promise<T>, dependencies: unknown[] = []) {
 }
 
 function App() {
+  const path = useRoute();
   const { user, loading } = useAuth();
+  if (isPublicAuthPath(path)) return <AuthFlowScreen path={path} />;
   if (loading) return <FullScreenLoader label="Checking your session" />;
   if (!user) return <AuthScreen />;
   return <AppShell />;
+}
+
+function isPublicAuthPath(path: string) {
+  return path === "/forgot-password" || path === "/reset-password" || path === "/verify-email";
 }
 
 function FullScreenLoader({ label }: { label: string }) {
   return <div className="full-screen-loader"><div className="loader-mark"><span /></div><p>{label}<span className="loading-dots">...</span></p></div>;
 }
 
-function AuthScreen() {
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [form, setForm] = useState({ email: "", password: "", display_name: "", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", challenge_mode: "balanced" });
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError("");
-    setSubmitting(true);
-    try {
-      if (mode === "login") await signIn(form.email, form.password);
-      else await signUp(form);
-    } catch (requestError) {
-      setError(errorMessage(requestError));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
+function AuthPageLayout({ children }: { children: ReactNode }) {
   return <main className="auth-page">
     <section className="auth-story" aria-label="DSA Quest overview">
       <div className="brand brand-large"><span className="brand-glyph"><span /></span><span>DSA<span className="brand-accent">Quest</span></span></div>
@@ -256,26 +246,154 @@ function AuthScreen() {
       <div className="auth-form-wrap">
         <div className="auth-theme-row"><span>Appearance</span><ThemeToggle compact /></div>
         <div className="mobile-brand brand"><span className="brand-glyph"><span /></span><span>DSA<span className="brand-accent">Quest</span></span></div>
-        <div className="auth-heading"><p className="eyebrow">{mode === "login" ? "Welcome back" : "Start your run"}</p><h2>{mode === "login" ? "Continue your quest." : "Create your account."}</h2><p>{mode === "login" ? "Pick up where your practice left off." : "A focused practice system, ready when you are."}</p></div>
-        <div className="auth-tabs" role="tablist" aria-label="Authentication mode"><button className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setError(""); }} role="tab" aria-selected={mode === "login"}>Sign in</button><button className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setError(""); }} role="tab" aria-selected={mode === "register"}>Create account</button></div>
-        <form onSubmit={submit} className="auth-form">
-          {mode === "register" && <Field label="Display name" value={form.display_name} onChange={(value) => setForm({ ...form, display_name: value })} placeholder="How should we call you?" autoComplete="name" required />}
-          <Field label="Email address" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} placeholder="you@example.com" autoComplete="email" required />
-          <Field label="Password" type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} placeholder={mode === "register" ? "At least 8 characters" : "Enter your password"} autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={mode === "register" ? 8 : undefined} />
-          {mode === "register" && <>
-            <div className="form-row"><label className="field"><span>Challenge mode</span><select value={form.challenge_mode} onChange={(event) => setForm({ ...form, challenge_mode: event.target.value })}><option value="beginner">Beginner · Easy + Easy</option><option value="balanced">Balanced · Easy + Medium</option><option value="intermediate">Intermediate · Medium + Medium</option><option value="advanced">Advanced · Medium + Hard</option><option value="adaptive">Adaptive · Easy + Medium (MVP)</option></select></label><label className="field"><span>Timezone</span><input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} required /></label></div>
-          </>}
-          {error && <div className="form-error" role="alert"><Icon name="info" size={17} /><span>{error}</span></div>}
-          <button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? <><span className="button-spinner" /> {mode === "login" ? "Signing in" : "Creating account"}</> : <>{mode === "login" ? "Enter DSA Quest" : "Begin my quest"}<Icon name="arrow" size={17} /></>}</button>
-        </form>
-        <p className="auth-note"><Icon name="lock" size={14} /> Your account is secured by the DSA Quest API.</p>
+        {children}
       </div>
     </section>
   </main>;
 }
 
+function AuthScreen() {
+  const { signIn, signUp } = useAuth();
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [form, setForm] = useState({ email: "", password: "", confirm_password: "", display_name: "", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", challenge_mode: "balanced" });
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    setSubmitting(true);
+    try {
+      if (mode === "login") await signIn(form.email, form.password);
+      else {
+        if (form.password !== form.confirm_password) {
+          setError("Passwords do not match.");
+          return;
+        }
+        const result = await signUp(form);
+        setPendingEmail(result.email);
+      }
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (pendingEmail) return <AuthPageLayout><VerificationPending email={pendingEmail} /></AuthPageLayout>;
+  return <AuthPageLayout>
+    <div className="auth-heading"><p className="eyebrow">{mode === "login" ? "Welcome back" : "Start your run"}</p><h2>{mode === "login" ? "Continue your quest." : "Create your account."}</h2><p>{mode === "login" ? "Pick up where your practice left off." : "A focused practice system, ready when you are."}</p></div>
+    <div className="auth-tabs" role="tablist" aria-label="Authentication mode"><button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setError(""); }} role="tab" aria-selected={mode === "login"}>Sign in</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setError(""); }} role="tab" aria-selected={mode === "register"}>Create account</button></div>
+    <form onSubmit={submit} className="auth-form">
+      {mode === "register" && <Field label="Display name" value={form.display_name} onChange={(value) => setForm({ ...form, display_name: value })} placeholder="How should we call you?" autoComplete="name" required />}
+      <Field label="Email address" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} placeholder="you@example.com" autoComplete="email" required />
+      <PasswordField label="Password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} placeholder={mode === "register" ? "At least 8 characters" : "Enter your password"} autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={mode === "register" ? 8 : undefined} visible={showPassword} onToggle={() => setShowPassword((value) => !value)} />
+      {mode === "login" && <div className="auth-field-action"><button type="button" className="auth-link" onClick={() => navigateTo("/forgot-password")}>Forgot password?</button></div>}
+      {mode === "register" && <>
+        <PasswordField label="Confirm password" value={form.confirm_password} onChange={(value) => setForm({ ...form, confirm_password: value })} placeholder="Repeat your password" autoComplete="new-password" required minLength={8} visible={showConfirmation} onToggle={() => setShowConfirmation((value) => !value)} />
+        <p className="password-hint">Use at least 8 characters. A verification link will be sent before you can sign in.</p>
+        <div className="form-row"><label className="field"><span>Challenge mode</span><select value={form.challenge_mode} onChange={(event) => setForm({ ...form, challenge_mode: event.target.value })}><option value="beginner">Beginner · Easy + Easy</option><option value="balanced">Balanced · Easy + Medium</option><option value="intermediate">Intermediate · Medium + Medium</option><option value="advanced">Advanced · Medium + Hard</option><option value="adaptive">Adaptive · Easy + Medium (MVP)</option></select></label><label className="field"><span>Timezone</span><input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} required /></label></div>
+      </>}
+      {error && <div className="form-error" role="alert"><Icon name="info" size={17} /><span>{error}</span></div>}
+      {mode === "login" && error.toLowerCase().includes("verify") && <button type="button" className="auth-link auth-link-left" onClick={() => navigateTo("/verify-email")}>Need a new verification link?</button>}
+      <button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? <><span className="button-spinner" /> {mode === "login" ? "Signing in" : "Creating account"}</> : <>{mode === "login" ? "Enter DSA Quest" : "Begin my quest"}<Icon name="arrow" size={17} /></>}</button>
+    </form>
+    <p className="auth-note"><Icon name="lock" size={14} /> Your account is secured by the DSA Quest API.</p>
+  </AuthPageLayout>;
+}
+
 function Field({ label, value, onChange, placeholder, type = "text", autoComplete, required, minLength }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string; autoComplete?: string; required?: boolean; minLength?: number }) {
   return <label className="field"><span>{label}</span><input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} autoComplete={autoComplete} required={required} minLength={minLength} /></label>;
+}
+
+function PasswordField({ label, value, onChange, placeholder, autoComplete, required, minLength, visible, onToggle }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; autoComplete?: string; required?: boolean; minLength?: number; visible: boolean; onToggle: () => void }) {
+  return <label className="field"><span className="field-label-row"><span>{label}</span><button className="password-toggle" type="button" onClick={onToggle} aria-label={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}><Icon name={visible ? "eyeOff" : "eye"} size={14} /> {visible ? "Hide" : "Show"}</button></span><span className="input-with-action"><input type={visible ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} autoComplete={autoComplete} required={required} minLength={minLength} /><span className="input-lock"><Icon name="lock" size={14} /></span></span></label>;
+}
+
+function AuthFlowScreen({ path }: { path: string }) {
+  return <AuthPageLayout>{path === "/forgot-password" ? <ForgotPasswordPage /> : path === "/reset-password" ? <ResetPasswordPage /> : <VerifyEmailPage />}</AuthPageLayout>;
+}
+
+function AuthBackLink() {
+  return <button type="button" className="auth-link auth-link-left" onClick={() => navigateTo("/")}>Back to sign in</button>;
+}
+
+function VerificationPending({ email }: { email: string }) {
+  const [resending, setResending] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const resend = async () => {
+    setResending(true); setMessage(""); setError("");
+    try { const response = await api.resendVerification(email); setMessage(response.detail); }
+    catch (requestError) { setError(errorMessage(requestError)); }
+    finally { setResending(false); }
+  };
+  return <div className="auth-flow-card"><div className="auth-flow-icon"><Icon name="check" size={22} /></div><div className="auth-heading"><p className="eyebrow">Check your inbox</p><h2>Verify your email.</h2><p>We sent a verification link to <strong>{email}</strong>. Open it to activate your DSA Quest account.</p></div>{message && <div className="form-success" role="status">{message}</div>}{error && <div className="form-error" role="alert"><Icon name="info" size={17} /><span>{error}</span></div>}<button className="button button-secondary button-wide" type="button" onClick={resend} disabled={resending}>{resending ? <><span className="button-spinner" /> Sending</> : <><Icon name="refresh" size={15} /> Resend verification email</>}</button><AuthBackLink /></div>;
+}
+
+function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setSubmitting(true); setMessage(""); setError("");
+    try { const response = await api.requestPasswordReset(email); setMessage(response.detail); }
+    catch (requestError) { setError(errorMessage(requestError)); }
+    finally { setSubmitting(false); }
+  };
+  return <div className="auth-flow-card"><div className="auth-heading"><p className="eyebrow">Account recovery</p><h2>Forgot your password?</h2><p>Enter your email and we’ll send a secure reset link if an account exists.</p></div>{message ? <><div className="form-success" role="status">{message}</div><AuthBackLink /></> : <form onSubmit={submit} className="auth-form"><Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@example.com" autoComplete="email" required />{error && <div className="form-error" role="alert"><Icon name="info" size={17} /><span>{error}</span></div>}<button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? <><span className="button-spinner" /> Sending</> : <>Send reset link <Icon name="arrow" size={17} /></>}</button><AuthBackLink /></form>}</div>;
+}
+
+function VerifyEmailPage() {
+  const params = new URLSearchParams(window.location.search);
+  const uid = params.get("uid") || "";
+  const token = params.get("token") || "";
+  const [state, setState] = useState<"loading" | "success" | "error">("loading");
+  const [message, setMessage] = useState("");
+  const [email, setEmail] = useState("");
+  const [resending, setResending] = useState(false);
+  useEffect(() => {
+    if (!uid || !token) { setState("error"); setMessage("This verification link is incomplete or invalid."); return; }
+    api.verifyEmail(uid, token).then((response) => { setState("success"); setMessage(response.detail); }).catch((error) => { setState("error"); setMessage(errorMessage(error)); });
+  }, [uid, token]);
+  const resend = async (event: FormEvent) => {
+    event.preventDefault(); setResending(true);
+    try { const response = await api.resendVerification(email); setMessage(response.detail); }
+    catch (error) { setMessage(errorMessage(error)); }
+    finally { setResending(false); }
+  };
+  if (state === "loading") return <div className="auth-flow-card"><div className="auth-flow-icon"><span className="button-spinner" /></div><div className="auth-heading"><p className="eyebrow">Email verification</p><h2>Checking your link.</h2><p>Please wait while we securely verify your email address.</p></div></div>;
+  if (state === "success") return <div className="auth-flow-card"><div className="auth-flow-icon success"><Icon name="check" size={22} /></div><div className="auth-heading"><p className="eyebrow">You’re verified</p><h2>Welcome to DSA Quest.</h2><p>{message}</p></div><button className="button button-primary button-wide" type="button" onClick={() => navigateTo("/")}>Sign in <Icon name="arrow" size={17} /></button></div>;
+  return <div className="auth-flow-card"><div className="auth-flow-icon error"><Icon name="info" size={22} /></div><div className="auth-heading"><p className="eyebrow">Link unavailable</p><h2>We couldn’t verify that link.</h2><p>{message} Request a new link below if you still need to activate your account.</p></div><form onSubmit={resend} className="auth-form"><Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@example.com" autoComplete="email" required /><button className="button button-secondary button-wide" type="submit" disabled={resending}>{resending ? <><span className="button-spinner" /> Sending</> : <>Send a new verification link <Icon name="refresh" size={15} /></>}</button><AuthBackLink /></form></div>;
+}
+
+function ResetPasswordPage() {
+  const params = new URLSearchParams(window.location.search);
+  const uid = params.get("uid") || "";
+  const token = params.get("token") || "";
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setError("");
+    if (!uid || !token) { setError("This password reset link is incomplete or invalid."); return; }
+    if (password.length < 8) { setError("Use at least 8 characters for your new password."); return; }
+    if (password !== confirmation) { setError("Passwords do not match."); return; }
+    setSubmitting(true);
+    try { await api.resetPassword({ uid, token, new_password: password, confirm_password: confirmation }); setSuccess(true); }
+    catch (requestError) { setError(errorMessage(requestError)); }
+    finally { setSubmitting(false); }
+  };
+  if (success) return <div className="auth-flow-card"><div className="auth-flow-icon success"><Icon name="check" size={22} /></div><div className="auth-heading"><p className="eyebrow">Password updated</p><h2>You’re ready to sign in.</h2><p>Your password was changed and existing sessions were signed out.</p></div><button className="button button-primary button-wide" type="button" onClick={() => navigateTo("/")}>Back to sign in <Icon name="arrow" size={17} /></button></div>;
+  return <div className="auth-flow-card"><div className="auth-heading"><p className="eyebrow">Account recovery</p><h2>Choose a new password.</h2><p>Use a strong password you do not reuse elsewhere.</p></div><form onSubmit={submit} className="auth-form"><PasswordField label="New password" value={password} onChange={setPassword} placeholder="At least 8 characters" autoComplete="new-password" required minLength={8} visible={showPassword} onToggle={() => setShowPassword((value) => !value)} /><PasswordField label="Confirm new password" value={confirmation} onChange={setConfirmation} placeholder="Repeat your new password" autoComplete="new-password" required minLength={8} visible={showConfirmation} onToggle={() => setShowConfirmation((value) => !value)} /><p className="password-hint">Passwords must satisfy the security rules configured by DSA Quest.</p>{error && <div className="form-error" role="alert"><Icon name="info" size={17} /><span>{error}</span></div>}<button className="button button-primary button-wide" type="submit" disabled={submitting}>{submitting ? <><span className="button-spinner" /> Updating</> : <>Reset password <Icon name="arrow" size={17} /></>}</button><AuthBackLink /></form></div>;
 }
 
 function AppShell() {
@@ -288,6 +406,10 @@ function AppShell() {
 
   useEffect(() => setMobileNav(false), [path]);
   useEffect(() => {
+    document.body.classList.toggle("drawer-open", mobileNav);
+    return () => document.body.classList.remove("drawer-open");
+  }, [mobileNav]);
+  useEffect(() => {
     if (user?.timezone) displayTimeZone = user.timezone;
   }, [user?.timezone]);
   useEffect(() => {
@@ -298,6 +420,14 @@ function AppShell() {
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [mobileNav]);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 800px)");
+    const closeOnDesktop = (event: MediaQueryListEvent) => {
+      if (!event.matches) setMobileNav(false);
+    };
+    media.addEventListener?.("change", closeOnDesktop);
+    return () => media.removeEventListener?.("change", closeOnDesktop);
+  }, []);
 
   const logout = async () => {
     setLoggingOut(true);
@@ -311,15 +441,15 @@ function AppShell() {
   };
 
   return <ToastProvider><div className="app-shell">
-    <div className={`mobile-overlay ${mobileNav ? "visible" : ""}`} onClick={() => setMobileNav(false)} />
-    <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
+    <button className={`mobile-overlay ${mobileNav ? "visible" : ""}`} onClick={() => setMobileNav(false)} aria-label="Close navigation" tabIndex={mobileNav ? 0 : -1} />
+    <aside id="main-navigation" className={`sidebar ${mobileNav ? "open" : ""}`} aria-label="Main navigation">
       <div className="sidebar-top"><div className="brand"><span className="brand-glyph"><span /></span><span>DSA<span className="brand-accent">Quest</span></span></div><button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><Icon name="close" /></button></div>
       <div className="workspace-label"><span className="workspace-dot" /> Practice workspace</div>
       <nav className="main-nav" aria-label="Main navigation"><p className="nav-label">Workspace</p>{navItems.slice(0, 5).map((item) => <NavItem key={item.path} {...item} active={activePath === item.path} />)}<p className="nav-label nav-label-spaced">Review</p>{navItems.slice(5).map((item) => <NavItem key={item.path} {...item} active={activePath === item.path} />)}</nav>
       <div className="sidebar-bottom"><div className="sidebar-tip"><div className="tip-icon"><Icon name="spark" size={16} /></div><strong>Consistency beats intensity.</strong><span>Show up today. Future you will thank you.</span></div><button className="sidebar-account" onClick={() => navigateTo("/profile")}><span className="avatar avatar-small">{initials(user?.display_name || "")}</span><span className="account-text"><strong>{user?.display_name || "Developer"}</strong><small>{user?.email}</small></span><Icon name="chevron" size={15} /></button><button className="sidebar-logout" onClick={logout} disabled={loggingOut}><Icon name="logout" size={16} /> {loggingOut ? "Signing out..." : "Sign out"}</button></div>
     </aside>
     <div className="main-area">
-      <header className="topbar"><div className="topbar-left"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Icon name="menu" /></button><div><p className="breadcrumb"><span>Workspace</span><Icon name="chevron" size={13} /><strong>{current.label}</strong></p><p className="topbar-context">{activePath === "/" ? "Your daily practice at a glance" : current.label === "Daily Quest" ? "Keep today's momentum moving" : `Build your ${current.label.toLowerCase()} over time`}</p></div></div><div className="topbar-right"><span className="api-status"><span className="status-dot" /> API connected</span><ThemeToggle compact /><button className="icon-button" onClick={() => navigateTo("/profile")} aria-label="Open profile settings"><Icon name="settings" size={18} /></button><button className="avatar" onClick={() => navigateTo("/profile")} aria-label="Open profile">{initials(user?.display_name || "")}</button></div></header>
+      <header className="topbar"><div className="topbar-left"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Open navigation" aria-expanded={mobileNav} aria-controls="main-navigation"><Icon name="menu" /></button><div><p className="breadcrumb"><span>Workspace</span><Icon name="chevron" size={13} /><strong>{current.label}</strong></p><p className="topbar-context">{activePath === "/" ? "Your daily practice at a glance" : current.label === "Daily Quest" ? "Keep today's momentum moving" : `Build your ${current.label.toLowerCase()} over time`}</p></div></div><div className="topbar-right"><span className="api-status"><span className="status-dot" /> API connected</span><ThemeToggle compact /><button className="icon-button" onClick={() => navigateTo("/profile")} aria-label="Open profile settings"><Icon name="settings" size={18} /></button><button className="avatar" onClick={() => navigateTo("/profile")} aria-label="Open profile">{initials(user?.display_name || "")}</button></div></header>
       <main className="page-content">{activePath === "/" && <DashboardView />} {activePath === "/quest" && <QuestView />} {activePath === "/patterns" && <PatternsView />} {activePath === "/progress" && <ProgressView />} {activePath === "/achievements" && <AchievementsView />} {activePath === "/history" && <HistoryView />} {activePath === "/profile" && <ProfileView />}</main>
     </div>
   </div></ToastProvider>;
