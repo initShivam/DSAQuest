@@ -31,7 +31,7 @@ export class ApiError extends Error {
 
 let unauthorizedHandler: (() => void) | undefined;
 
-export function setUnauthorizedHandler(handler: () => void) {
+export function setUnauthorizedHandler(handler?: () => void) {
   unauthorizedHandler = handler;
 }
 
@@ -73,20 +73,40 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (token) headers.set("Authorization", `Token ${token}`);
 
   let response: Response;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 30_000);
   try {
-    response = await fetch(path.startsWith("http") ? path : `${API_URL}${path}`, { ...options, headers });
-  } catch {
+    response = await fetch(path.startsWith("http") ? path : `${API_URL}${path}`, { ...options, headers, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("The DSA Quest API took too long to respond. Please try again.");
+    }
     throw new ApiError("The DSA Quest API is unavailable. Start the backend and try again.");
+  } finally {
+    window.clearTimeout(timeout);
   }
 
   const contentType = response.headers.get("content-type") || "";
-  const payload = response.status === 204 ? null : contentType.includes("json") ? await response.json() : await response.text();
-  if (response.status === 401) {
+  if (response.status === 401 && token === getStoredToken()) {
     clearToken();
     unauthorizedHandler?.();
   }
+
+  let payload: unknown = null;
+  if (response.status !== 204) {
+    try {
+      if (contentType.includes("json")) payload = await response.json();
+      else if (contentType.startsWith("text/")) payload = await response.text();
+    } catch {
+      payload = null;
+    }
+  }
+
   if (!response.ok) {
-    throw new ApiError(detailFromPayload(payload), response.status, detailFromPayload(payload));
+    const genericMessage = response.status >= 500 || contentType.includes("text/html")
+      ? "The DSA Quest API is temporarily unavailable. Please try again."
+      : detailFromPayload(payload);
+    throw new ApiError(genericMessage, response.status, genericMessage);
   }
   return payload as T;
 }

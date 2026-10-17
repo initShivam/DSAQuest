@@ -301,8 +301,13 @@ function AppShell() {
 
   const logout = async () => {
     setLoggingOut(true);
-    await signOut();
-    setLoggingOut(false);
+    try {
+      await signOut();
+    } catch {
+      // Local credentials are cleared by AuthProvider even if the API is unavailable.
+    } finally {
+      setLoggingOut(false);
+    }
   };
 
   return <ToastProvider><div className="app-shell">

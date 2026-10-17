@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, clearToken, hasToken, setUnauthorizedHandler, storeToken } from "./api";
+import { ApiError, api, clearToken, hasToken, setUnauthorizedHandler, storeToken, TOKEN_KEY } from "./api";
 import type { User } from "./types";
 
 interface AuthContextValue {
@@ -18,15 +18,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setUnauthorizedHandler(() => setUser(null));
-    if (!hasToken()) {
-      setLoading(false);
-      return;
-    }
-    api.me()
-      .then(setUser)
-      .catch(() => clearToken())
-      .finally(() => setLoading(false));
+    let active = true;
+    const refreshUser = async () => {
+      if (!hasToken()) {
+        if (active) {
+          setUser(null);
+          setLoading(false);
+        }
+        return;
+      }
+      if (active) setLoading(true);
+      try {
+        const nextUser = await api.me();
+        if (active) setUser(nextUser);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) clearToken();
+        if (active) setUser(null);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    setUnauthorizedHandler(() => {
+      if (active) {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+    void refreshUser();
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== TOKEN_KEY) return;
+      if (!event.newValue) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+      void refreshUser();
+    };
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      active = false;
+      window.removeEventListener("storage", handleStorage);
+      setUnauthorizedHandler();
+    };
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
