@@ -1,0 +1,149 @@
+import type {
+  Achievement,
+  CompletionResult,
+  DashboardData,
+  DailyChallenge,
+  HistoryData,
+  Pattern,
+  ProgressData,
+  Question,
+  User,
+  XPHistoryData,
+} from "./types";
+
+// Keep local development same-origin so Vite can proxy API calls without a
+// separate CORS configuration. Production builds should provide VITE_API_URL
+// when the API is hosted on another origin.
+const API_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+const TOKEN_KEY = "dsa-quest-token";
+
+export class ApiError extends Error {
+  status: number;
+  detail: string;
+
+  constructor(message: string, status = 0, detail = message) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+let unauthorizedHandler: (() => void) | undefined;
+
+export function setUnauthorizedHandler(handler: () => void) {
+  unauthorizedHandler = handler;
+}
+
+function getStoredToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function storeToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+export function hasToken() {
+  return Boolean(getStoredToken());
+}
+
+function detailFromPayload(payload: unknown): string {
+  if (!payload) return "Something went wrong. Please try again.";
+  if (typeof payload === "string") return payload;
+  if (typeof payload === "object") {
+    const data = payload as Record<string, unknown>;
+    if (typeof data.detail === "string") return data.detail;
+    for (const value of Object.values(data)) {
+      if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+      if (typeof value === "string") return value;
+    }
+  }
+  return "Something went wrong. Please try again.";
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  headers.set("Accept", "application/json");
+  if (options.body) headers.set("Content-Type", "application/json");
+  const token = getStoredToken();
+  if (token) headers.set("Authorization", `Token ${token}`);
+
+  let response: Response;
+  try {
+    response = await fetch(path.startsWith("http") ? path : `${API_URL}${path}`, { ...options, headers });
+  } catch {
+    throw new ApiError("The DSA Quest API is unavailable. Start the backend and try again.");
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  const payload = response.status === 204 ? null : contentType.includes("json") ? await response.json() : await response.text();
+  if (response.status === 401) {
+    clearToken();
+    unauthorizedHandler?.();
+  }
+  if (!response.ok) {
+    throw new ApiError(detailFromPayload(payload), response.status, detailFromPayload(payload));
+  }
+  return payload as T;
+}
+
+function unwrapList<T>(payload: T[] | { results: T[] }): T[] {
+  return Array.isArray(payload) ? payload : payload.results;
+}
+
+async function requestAll<T>(path: string): Promise<T[]> {
+  const values: T[] = [];
+  let next: string | null = path;
+  while (next) {
+    const payload: T[] | { results: T[]; next?: string | null } = await request<T[] | { results: T[]; next?: string | null }>(next);
+    values.push(...unwrapList(payload));
+    if (Array.isArray(payload) || !payload.next) break;
+    try {
+      const parsed: URL = new URL(payload.next, window.location.origin);
+      const apiPath = API_URL.startsWith("http") ? new URL(API_URL).pathname : API_URL;
+      next = `${parsed.pathname.startsWith(apiPath) ? parsed.pathname.slice(apiPath.length) || "/" : parsed.pathname}${parsed.search}`;
+    } catch {
+      next = payload.next;
+    }
+  }
+  return values;
+}
+
+export const api = {
+  login: (body: { email: string; password: string }) =>
+    request<{ token: string; user: User }>("/auth/login/", { method: "POST", body: JSON.stringify(body) }),
+  register: (body: { email: string; password: string; display_name: string; timezone: string; challenge_mode: string }) =>
+    request<{ token: string; user: User }>("/auth/register/", { method: "POST", body: JSON.stringify(body) }),
+  logout: () => request<null>("/auth/logout/", { method: "POST" }),
+  me: () => request<User>("/auth/me/"),
+  updateMe: (body: Partial<Pick<User, "display_name" | "timezone" | "challenge_mode">>) =>
+    request<User>("/auth/me/", { method: "PATCH", body: JSON.stringify(body) }),
+  dashboard: () => request<DashboardData>("/dashboard/"),
+  today: () => request<DailyChallenge>("/challenges/today/"),
+  generateChallenge: () => request<DailyChallenge>("/challenges/generate/", { method: "POST" }),
+  questions: async (params: { difficulty?: string; pattern?: string; ordering?: string } = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => value && query.set(key, value));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return requestAll<Question>(`/questions/${suffix}`);
+  },
+  question: (id: number) => request<Question>(`/questions/${id}/`),
+  complete: (id: number, personal_notes = "") =>
+    request<CompletionResult>(`/questions/${id}/complete/`, {
+      method: "POST",
+      body: JSON.stringify({ personal_notes }),
+    }),
+  progress: () => request<ProgressData>("/progress/"),
+  history: async (days = 30) => request<HistoryData>(`/progress/history/?days=${days}`),
+  patterns: () => requestAll<Pattern>("/patterns/"),
+  pattern: (id: number) => request<Pattern>(`/patterns/${id}/`),
+  achievements: () => request<Achievement[]>("/achievements/"),
+  streak: () => request<{ today: string; today_goal_completed: boolean; today_questions_completed: number; current_streak: number; longest_streak: number }>("/streak/"),
+  xpHistory: () => request<XPHistoryData>("/xp/history/"),
+};
+
+export { API_URL, TOKEN_KEY };
