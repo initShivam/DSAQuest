@@ -593,9 +593,9 @@ function QuestView() {
           <div className="quest-intro-copy">
             <span className="quest-intro-mark"><Icon name="target" size={20} /></span>
             <div>
-              <p className="eyebrow">Quest unavailable</p>
+              <p className="eyebrow">Questions unavailable</p>
               <h2>No problems assigned for today.</h2>
-              <p>We couldn't find suitable problems for your current challenge mode. Try adjusting your preferences in the profile settings.</p>
+              <p>We couldn't find suitable problems for your current challenge mode. This usually happens if the question catalog is empty or too sparse for your selected difficulty. Try adjusting your preferences in the profile settings.</p>
             </div>
           </div>
           <QuestProgress completed={challenge.mandatory_completed} total={challenge.mandatory_total} />
@@ -603,7 +603,7 @@ function QuestView() {
         <div className="quest-layout">
           <section>
             <div className="quest-section-label"><span>Mandatory problems</span><small>0/0 complete</small></div>
-            <EmptyState icon="book" title="No assignments found" description="Your daily quest is currently empty. This can happen if the question catalog is sparse for your selected difficulty." />
+            <EmptyState icon="book" title="No assignments found" description="Your daily quest is currently empty. Please ensure the question catalog is populated." />
           </section>
           <aside className="quest-aside">
             <div className="aside-card">
