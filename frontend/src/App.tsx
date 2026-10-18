@@ -584,6 +584,47 @@ function QuestView() {
   if (!challenge) return null;
   const mandatory = challenge.assignments.filter((assignment) => !assignment.is_bonus);
   const bonus = challenge.assignments.filter((assignment) => assignment.is_bonus);
+
+  if (mandatory.length === 0 && bonus.length === 0) {
+    return (
+      <>
+        <PageHeader eyebrow="Daily quest" title="Your focused practice plan" description={`${formatLongDate(challenge.challenge_date)} · Two qualifying problems earn your daily goal.`} action={<button className="button button-secondary button-small" onClick={loaded.reload}><Icon name="refresh" size={15} /> Refresh quest</button>} />
+        <section className="quest-intro">
+          <div className="quest-intro-copy">
+            <span className="quest-intro-mark"><Icon name="target" size={20} /></span>
+            <div>
+              <p className="eyebrow">Quest unavailable</p>
+              <h2>No problems assigned for today.</h2>
+              <p>We couldn't find suitable problems for your current challenge mode. Try adjusting your preferences in the profile settings.</p>
+            </div>
+          </div>
+          <QuestProgress completed={challenge.mandatory_completed} total={challenge.mandatory_total} />
+        </section>
+        <div className="quest-layout">
+          <section>
+            <div className="quest-section-label"><span>Mandatory problems</span><small>0/0 complete</small></div>
+            <EmptyState icon="book" title="No assignments found" description="Your daily quest is currently empty. This can happen if the question catalog is sparse for your selected difficulty." />
+          </section>
+          <aside className="quest-aside">
+            <div className="aside-card">
+              <span className="aside-icon"><Icon name="flame" size={18} /></span>
+              <p className="eyebrow">Reward loop</p>
+              <h3>Make today count.</h3>
+              <div className="reward-row"><span>Easy completion</span><strong>+10 XP</strong></div>
+              <div className="reward-row"><span>Medium completion</span><strong>+25 XP</strong></div>
+              <div className="reward-row"><span>Hard completion</span><strong>+50 XP</strong></div>
+              <div className="reward-row reward-bonus"><span>Daily goal bonus</span><strong>+20 XP</strong></div>
+            </div>
+            <div className="aside-note">
+              <Icon name="info" size={16} />
+              <p><strong>Be honest with your log.</strong> Completions are self-reported so your progress stays meaningful.</p>
+            </div>
+          </aside>
+        </div>
+      </>
+    );
+  }
+
   return <><PageHeader eyebrow="Daily quest" title="Your focused practice plan" description={`${formatLongDate(challenge.challenge_date)} · Two qualifying problems earn your daily goal.`} action={<button className="button button-secondary button-small" onClick={loaded.reload}><Icon name="refresh" size={15} /> Refresh quest</button>} /><section className="quest-intro"><div className="quest-intro-copy"><span className="quest-intro-mark"><Icon name="target" size={20} /></span><div><p className="eyebrow">{challenge.goal_completed ? "Quest complete" : "The daily loop"}</p><h2>{challenge.goal_completed ? "You made the time." : "Solve, report, repeat."}</h2><p>Open the official problem, work it through on LeetCode, then record your completion here. DSA Quest tracks your practice—it does not verify LeetCode submissions.</p></div></div><QuestProgress completed={challenge.mandatory_completed} total={challenge.mandatory_total} /></section><div className="quest-layout"><section><div className="quest-section-label"><span>Mandatory problems</span><small>{challenge.mandatory_completed}/{challenge.mandatory_total} complete</small></div><div className="quest-detail-list">{mandatory.map((assignment, index) => <QuestAssignmentCard key={assignment.id} assignment={assignment} index={index} submitting={submitting === assignment.question.id} notesOpen={notesOpen === assignment.question.id} notes={notes[assignment.question.id] || ""} setNotes={(value) => setNotes({ ...notes, [assignment.question.id]: value })} toggleNotes={() => setNotesOpen(notesOpen === assignment.question.id ? null : assignment.question.id)} onComplete={() => submitCompletion(assignment)} />)}</div>{bonus.length > 0 && <><div className="quest-section-label bonus-label"><span>Bonus practice</span><small>Optional · does not affect your daily goal</small></div>{bonus.map((assignment) => <QuestAssignmentCard key={assignment.id} assignment={assignment} index={2} bonus submitting={submitting === assignment.question.id} notesOpen={notesOpen === assignment.question.id} notes={notes[assignment.question.id] || ""} setNotes={(value) => setNotes({ ...notes, [assignment.question.id]: value })} toggleNotes={() => setNotesOpen(notesOpen === assignment.question.id ? null : assignment.question.id)} onComplete={() => submitCompletion(assignment)} />)}</>}</section><aside className="quest-aside"><div className="aside-card"><span className="aside-icon"><Icon name="flame" size={18} /></span><p className="eyebrow">Reward loop</p><h3>Make today count.</h3><div className="reward-row"><span>Easy completion</span><strong>+10 XP</strong></div><div className="reward-row"><span>Medium completion</span><strong>+25 XP</strong></div><div className="reward-row"><span>Hard completion</span><strong>+50 XP</strong></div><div className="reward-row reward-bonus"><span>Daily goal bonus</span><strong>+20 XP</strong></div></div><div className="aside-note"><Icon name="info" size={16} /><p><strong>Be honest with your log.</strong> Completions are self-reported so your progress stays meaningful.</p></div></aside></div></>;
 }
 
