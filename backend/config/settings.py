@@ -183,6 +183,8 @@ REST_FRAMEWORK = {
 }
 
 PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600"))
+EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "smtp")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 EMAIL_BACKEND = os.getenv(
     "EMAIL_BACKEND",
     "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
@@ -198,11 +200,15 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@dsaquest.onrender
 if EMAIL_USE_TLS and EMAIL_USE_SSL:
     raise ImproperlyConfigured("EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be enabled.")
 
-# Fail fast on production if SMTP is not configured
-if not DEBUG and EMAIL_BACKEND == "django.core.mail.backends.smtp.EmailBackend":
-    if not EMAIL_HOST or not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
-        raise ImproperlyConfigured(
-            "Production SMTP backend requires EMAIL_HOST, EMAIL_HOST_USER, and EMAIL_HOST_PASSWORD to be set."
-        )
-    if not (1 <= EMAIL_PORT <= 65535):
-        raise ImproperlyConfigured(f"Invalid EMAIL_PORT: {EMAIL_PORT}. Must be between 1 and 65535.")
+# Fail fast on production if email is not configured
+if not DEBUG:
+    if EMAIL_PROVIDER == "smtp" and EMAIL_BACKEND == "django.core.mail.backends.smtp.EmailBackend":
+        if not EMAIL_HOST or not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
+            raise ImproperlyConfigured(
+                "Production SMTP backend requires EMAIL_HOST, EMAIL_HOST_USER, and EMAIL_HOST_PASSWORD to be set."
+            )
+        if not (1 <= EMAIL_PORT <= 65535):
+            raise ImproperlyConfigured(f"Invalid EMAIL_PORT: {EMAIL_PORT}. Must be between 1 and 65535.")
+    elif EMAIL_PROVIDER == "resend":
+        if not RESEND_API_KEY:
+            raise ImproperlyConfigured("Production Resend provider requires RESEND_API_KEY to be set.")

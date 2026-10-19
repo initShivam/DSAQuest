@@ -1,6 +1,7 @@
 import logging
 import socket
 import smtplib
+from abc import ABC, abstractmethod
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -11,22 +12,24 @@ from django.utils.encoding import force_bytes
 
 from .tokens import email_verification_token_generator
 
+try:
+    import resend
+except ImportError:
+    resend = None
+
 logger = logging.getLogger(__name__)
 
 class EmailDeliveryError(Exception):
-    """Raised when the email backend accepts no recipients."""
+    """Raised when the email backend accepts no recipients or API fails."""
     pass
 
-def _frontend_link(path, query):
-    return f"{settings.PUBLIC_FRONTEND_URL}/{path}?{urlencode(query)}"
+class BaseEmailProvider(ABC):
+    @abstractmethod
+    def send(self, subject, message, recipient_list):
+        pass
 
-def _send_email_with_error_handling(subject, message, recipient_list, email_type):
-    """
-    Internal helper to send emails with consistent error handling and logging.
-    """
-    logger.info(f"Attempting to send {email_type} email to {recipient_list[0]} using backend {settings.EMAIL_BACKEND}")
-
-    try:
+class SMTPProvider(BaseEmailProvider):
+    def send(self, subject, message, recipient_list):
         delivered = send_mail(
             subject,
             message,
@@ -35,14 +38,63 @@ def _send_email_with_error_handling(subject, message, recipient_list, email_type
             fail_silently=False,
         )
         if delivered != 1:
-            logger.error(f"{email_type} delivery failed: {delivered} recipients accepted for {recipient_list[0]}")
-            raise EmailDeliveryError(f"The email backend accepted no recipients for {email_type}.")
+            raise EmailDeliveryError(f"SMTP backend accepted {delivered} recipients, expected 1.")
+        return delivered
 
+class ResendProvider(BaseEmailProvider):
+    def __init__(self):
+        if resend is None:
+            raise ImportError("The 'resend' package is required for ResendProvider.")
+        self.client = resend.Resend(settings.RESEND_API_KEY)
+
+    def send(self, subject, message, recipient_list):
+        try:
+            # Resend API expects 'to' as a string or list of strings
+            # We use recipient_list[0] as our logic currently sends to one user
+            params = {
+                "from": settings.DEFAULT_FROM_EMAIL,
+                "to": recipient_list[0],
+                "subject": subject,
+                "html": message.replace("\n", "<br>"), # Simple conversion for HTML email
+            }
+            response = self.client.emails.send(params)
+
+            # Resend SDK usually returns a response object or raises an exception
+            if not response or (isinstance(response, dict) and response.get("id") is None):
+                raise EmailDeliveryError("Resend API did not return a successful delivery ID.")
+
+            return 1
+        except Exception as e:
+            # Re-raise as EmailDeliveryError to maintain view contract
+            raise EmailDeliveryError(f"Resend API Error: {str(e)}")
+
+def get_email_provider():
+    provider = settings.EMAIL_PROVIDER.lower()
+    if provider == "resend":
+        return ResendProvider()
+    # Default to SMTP (which includes Django's locmem/console backends)
+    return SMTPProvider()
+
+def _frontend_link(path, query):
+    return f"{settings.PUBLIC_FRONTEND_URL}/{path}?{urlencode(query)}"
+
+def _send_email_with_error_handling(subject, message, recipient_list, email_type):
+    """
+    Internal helper to send emails with consistent error handling and logging.
+    """
+    logger.info(f"Attempting to send {email_type} email to {recipient_list[0]} using provider {settings.EMAIL_PROVIDER}")
+
+    try:
+        provider = get_email_provider()
+        delivered = provider.send(subject, message, recipient_list)
         logger.info(f"{email_type} email successfully delivered to {recipient_list[0]}")
         return delivered
 
     except (socket.timeout, smtplib.SMTPConnectError, smtplib.SMTPException, OSError) as e:
         logger.exception(f"Network or SMTP error during {email_type} to {recipient_list[0]}: {type(e).__name__}: {e}")
+        raise
+    except EmailDeliveryError as e:
+        logger.error(f"Delivery error during {email_type} to {recipient_list[0]}: {e}")
         raise
     except Exception as e:
         logger.exception(f"Unexpected error during {email_type} to {recipient_list[0]}: {type(e).__name__}: {e}")
