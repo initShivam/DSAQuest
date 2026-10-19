@@ -242,19 +242,19 @@ class BackendFlowTests(TestCase):
         self.assertTrue(register.data["verification_required"])
         self.assertNotIn("token", register.data)
 
-    def test_unverified_user_cannot_login_and_can_verify_once(self):
+    def test_unverified_user_can_login_and_verify_once(self):
         pending = User.objects.create_user(email="pending@example.com", password="strong-password-123")
         login = APIClient().post(
             "/api/auth/login/", {"email": pending.email, "password": "strong-password-123"}, format="json"
         )
-        self.assertEqual(login.status_code, 400)
-        self.assertEqual(str(login.data["code"][0]), "email_not_verified")
+        self.assertEqual(login.status_code, 200)
+        self.assertFalse(login.data["user"]["email_verified"])
 
         from rest_framework.authtoken.models import Token
 
         protected = APIClient()
-        protected.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=pending).key}")
-        self.assertEqual(protected.get("/api/auth/me/").status_code, 401)
+        protected.credentials(HTTP_AUTHORIZATION=f"Token {login.data['token']}")
+        self.assertEqual(protected.get("/api/auth/me/").status_code, 200)
 
         from django.utils.http import urlsafe_base64_encode
         from django.utils.encoding import force_bytes
@@ -266,6 +266,7 @@ class BackendFlowTests(TestCase):
         )
         self.assertEqual(verification.status_code, 200)
         self.assertTrue(User.objects.get(pk=pending.pk).email_verified)
+        self.assertEqual(protected.get("/api/auth/me/").status_code, 401)
         self.assertEqual(
             APIClient().post(
                 "/api/auth/email/verify/",

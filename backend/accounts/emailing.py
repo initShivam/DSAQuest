@@ -1,6 +1,4 @@
 import logging
-import socket
-import smtplib
 from urllib.parse import urlencode
 
 from django.conf import settings
@@ -23,15 +21,9 @@ class EmailDeliveryError(Exception):
 SMTP_EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 
-def _recipient_domain(recipient_list):
-    if not recipient_list or "@" not in recipient_list[0]:
-        return "unknown"
-    return recipient_list[0].rsplit("@", 1)[-1]
-
-
 def _validate_email_configuration():
     """Validate runtime email settings without exposing credential values."""
-    if settings.EMAIL_USE_TLS and settings.EMAIL_USE_SSL:
+    if settings.EMAIL_BACKEND == SMTP_EMAIL_BACKEND and settings.EMAIL_USE_TLS and settings.EMAIL_USE_SSL:
         raise EmailDeliveryError("Email delivery is not configured correctly.")
 
     if settings.EMAIL_BACKEND != SMTP_EMAIL_BACKEND:
@@ -55,6 +47,7 @@ def _validate_email_configuration():
 def _frontend_link(path, query):
     return f"{settings.PUBLIC_FRONTEND_URL}/{path}?{urlencode(query)}"
 
+
 def _send_email_with_error_handling(subject, message, recipient_list, email_type):
     """
     Internal helper to send emails with consistent error handling and logging.
@@ -62,55 +55,37 @@ def _send_email_with_error_handling(subject, message, recipient_list, email_type
     if not recipient_list:
         raise EmailDeliveryError("Email delivery has no recipient.")
 
-    recipient_domain = _recipient_domain(recipient_list)
-    logger.info(
-        "Attempting to send %s email using backend=%s host=%s recipient_domain=%s",
-        email_type,
-        settings.EMAIL_BACKEND,
-        settings.EMAIL_HOST,
-        recipient_domain,
-    )
-
     try:
         _validate_email_configuration()
-        delivered = send_mail(
+        accepted = send_mail(
             subject,
             message,
             settings.DEFAULT_FROM_EMAIL,
             recipient_list,
             fail_silently=False,
         )
-        if delivered != len(recipient_list):
+        # Django returns a count of messages, not recipients. This call sends one.
+        if accepted != 1:
             logger.error(
-                "%s email backend accepted %s of %s recipient(s), recipient_domain=%s",
+                "Email submission failed: email_type=%s reason=not_accepted",
                 email_type,
-                delivered,
-                len(recipient_list),
-                recipient_domain,
             )
             raise EmailDeliveryError("Email delivery was not accepted.")
 
-        logger.info("%s email successfully delivered, recipient_domain=%s", email_type, recipient_domain)
-        return delivered
+        logger.info("Email backend accepted message: email_type=%s (inbox delivery not confirmed)", email_type)
+        return accepted
 
     except EmailDeliveryError:
         raise
-    except (socket.timeout, TimeoutError, smtplib.SMTPException, OSError) as error:
-        logger.exception(
-            "SMTP delivery failed for %s email, recipient_domain=%s, error_type=%s",
-            email_type,
-            recipient_domain,
-            type(error).__name__,
-        )
-        raise EmailDeliveryError("Email delivery failed. Please try again later.") from error
     except Exception as error:
-        logger.exception(
-            "Unexpected email delivery failure for %s email, recipient_domain=%s, error_type=%s",
+        # Raw exception messages/tracebacks may echo credentials, tokens or content.
+        logger.error(
+            "Email submission failed: email_type=%s error_type=%s",
             email_type,
-            recipient_domain,
             type(error).__name__,
         )
-        raise EmailDeliveryError("Email delivery failed. Please try again later.") from error
+        raise EmailDeliveryError("Email delivery failed. Please try again later.") from None
+
 
 def send_verification_email(user):
     uid = urlsafe_base64_encode(force_bytes(user.pk))
@@ -131,6 +106,7 @@ This link expires in {settings.PASSWORD_RESET_TIMEOUT // 3600} hours. If you did
         [user.email],
         "verification"
     )
+
 
 def send_password_reset_email(user):
     uid = urlsafe_base64_encode(force_bytes(user.pk))

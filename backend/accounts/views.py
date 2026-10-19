@@ -40,7 +40,8 @@ class RegisterView(APIView):
             with transaction.atomic():
                 user = serializer.save()
                 send_verification_email(user)
-        except Exception:
+        except Exception as error:
+            logger.error("Registration rolled back: email submission incomplete error_type=%s", type(error).__name__)
             return Response(
                 {"detail": "We couldn't send the verification email. Please try again later."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -123,14 +124,14 @@ class ResendVerificationView(APIView):
                 try:
                     send_verification_email(user)
                 except Exception as error:
-                    logger.exception(
-                        "Failed to send verification email, recipient_domain=%s, error_type=%s",
-                        user.email.rsplit("@", 1)[-1],
+                    logger.error(
+                        "Verification email not confirmed: error_type=%s",
                         type(error).__name__,
                     )
         except Exception as error:
-            logger.exception("Unexpected error in ResendVerificationView, error_type=%s", type(error).__name__)
+            logger.error("Verification email request failed: error_type=%s", type(error).__name__)
 
+        # Enumeration-safe acknowledgement, never a delivery receipt.
         return Response({"detail": "If an account needs verification, a new email will arrive shortly."})
 
 
@@ -149,14 +150,14 @@ class PasswordResetRequestView(APIView):
                 try:
                     send_password_reset_email(user)
                 except Exception as error:
-                    logger.exception(
-                        "Failed to send password reset email, recipient_domain=%s, error_type=%s",
-                        user.email.rsplit("@", 1)[-1],
+                    logger.error(
+                        "Password reset email not confirmed: error_type=%s",
                         type(error).__name__,
                     )
         except Exception as error:
-            logger.exception("Unexpected error in PasswordResetRequestView, error_type=%s", type(error).__name__)
+            logger.error("Password reset email request failed: error_type=%s", type(error).__name__)
 
+        # Preserve the generic contract for known and unknown accounts, even on failure.
         return Response({"detail": "If an account exists for that email, a reset link will arrive shortly."})
 
 

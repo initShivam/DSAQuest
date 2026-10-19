@@ -193,7 +193,10 @@ REST_FRAMEWORK = {
 }
 
 PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600"))
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend").strip()
+SMTP_EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+BREVO_EMAIL_BACKEND = "accounts.email_backends.BrevoEmailBackend"
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", SMTP_EMAIL_BACKEND if DEBUG else BREVO_EMAIL_BACKEND).strip()
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "").strip()
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com").strip()
 EMAIL_PORT = env_int_strict("EMAIL_PORT", 587)
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "").strip()
@@ -202,18 +205,23 @@ EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", default=True)
 EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", default=False)
 EMAIL_TIMEOUT = env_int_strict("EMAIL_TIMEOUT", 20)
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER).strip()
-if EMAIL_USE_TLS and EMAIL_USE_SSL:
+if EMAIL_BACKEND == SMTP_EMAIL_BACKEND and EMAIL_USE_TLS and EMAIL_USE_SSL:
     raise ImproperlyConfigured("EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be enabled.")
-if EMAIL_PORT is None or not (1 <= EMAIL_PORT <= 65535):
-    raise ImproperlyConfigured(f"Invalid EMAIL_PORT: {EMAIL_PORT}. Must be between 1 and 65535.")
+if EMAIL_BACKEND == SMTP_EMAIL_BACKEND and not (1 <= EMAIL_PORT <= 65535):
+    raise ImproperlyConfigured("EMAIL_PORT must be between 1 and 65535.")
 if EMAIL_TIMEOUT is None or EMAIL_TIMEOUT <= 0:
     raise ImproperlyConfigured("EMAIL_TIMEOUT must be greater than zero.")
 
-# Fail fast on production if Gmail SMTP is not configured.
+# Fail fast without printing secret values. Only the selected transport needs credentials.
 if not DEBUG:
-    if EMAIL_BACKEND != "django.core.mail.backends.smtp.EmailBackend":
-        raise ImproperlyConfigured("Production email backend must be Django's SMTP EmailBackend.")
-    if not EMAIL_HOST or not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD or not DEFAULT_FROM_EMAIL:
-        raise ImproperlyConfigured(
-            "Production SMTP backend requires EMAIL_HOST, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, and DEFAULT_FROM_EMAIL."
-        )
+    if EMAIL_BACKEND not in (SMTP_EMAIL_BACKEND, BREVO_EMAIL_BACKEND):
+        raise ImproperlyConfigured("Production requires a supported SMTP or Brevo email backend.")
+    if not DEFAULT_FROM_EMAIL:
+        raise ImproperlyConfigured("Production email requires DEFAULT_FROM_EMAIL.")
+    if EMAIL_BACKEND == BREVO_EMAIL_BACKEND and not BREVO_API_KEY:
+        raise ImproperlyConfigured("Brevo email backend requires BREVO_API_KEY.")
+    if EMAIL_BACKEND == SMTP_EMAIL_BACKEND:
+        if not EMAIL_HOST or not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
+            raise ImproperlyConfigured(
+                "Production SMTP backend requires EMAIL_HOST, EMAIL_HOST_USER, and EMAIL_HOST_PASSWORD."
+            )
