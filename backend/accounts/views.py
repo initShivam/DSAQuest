@@ -119,7 +119,7 @@ class ResendVerificationView(APIView):
             try:
                 send_verification_email(user)
             except Exception:
-                pass
+                logger.exception(f"Failed to send verification email to {user.email}")
         return Response({"detail": "If an account needs verification, a new email will arrive shortly."})
 
 
@@ -137,7 +137,7 @@ class PasswordResetRequestView(APIView):
             try:
                 send_password_reset_email(user)
             except Exception:
-                pass
+                logger.exception(f"Failed to send password reset email to {user.email}")
         return Response({"detail": "If an account exists for that email, a reset link will arrive shortly."})
 
 

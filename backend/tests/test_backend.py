@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone as datetime_timezone
+import socket
 from unittest.mock import patch
 
 from django.conf import settings
@@ -271,6 +272,28 @@ class BackendFlowTests(TestCase):
         )
         self.assertEqual(response.status_code, 503)
         self.assertFalse(User.objects.filter(email="rollback@example.com").exists())
+
+    @patch.object(RegisterView, "throttle_classes", new=[])
+    @patch("smtplib.SMTP.connect", side_effect=socket.timeout("The connection timed out"))
+    def test_registration_handles_smtp_timeout(self, _mock_connect):
+        # Force SMTP backend for this test
+        with override_settings(
+            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+            EMAIL_HOST="smtp.gmail.com",
+            EMAIL_PORT=587,
+            EMAIL_HOST_USER="test@example.com",
+            EMAIL_HOST_PASSWORD="password",
+            EMAIL_USE_TLS=True,
+        ):
+            response = APIClient().post(
+                "/api/auth/register/",
+                {"email": "timeout@example.com", "password": "strong-password-123", "confirm_password": "strong-password-123", "display_name": "Timeout", "timezone": "UTC", "challenge_mode": "balanced"},
+                format="json",
+            )
+            # It should return 503 as per RegisterView logic when send_verification_email raises an exception
+            self.assertEqual(response.status_code, 503)
+            self.assertFalse(User.objects.filter(email="timeout@example.com").exists())
+
 
     def test_registration_rejects_password_mismatch(self):
         response = APIClient().post(

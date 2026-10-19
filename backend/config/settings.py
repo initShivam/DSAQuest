@@ -18,6 +18,16 @@ def env_bool(name, default=False):
     return default if value is None else value.strip().lower() in TRUE_VALUES
 
 
+def env_int(name, default=None):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value.strip())
+    except (ValueError, TypeError):
+        return default
+
+
 def env_list(name, default=""):
     return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
@@ -178,11 +188,21 @@ EMAIL_BACKEND = os.getenv(
     "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
 )
 EMAIL_HOST = os.getenv("EMAIL_HOST", "")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_PORT = env_int("EMAIL_PORT", 587)
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", default=not DEBUG)
 EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", default=False)
+EMAIL_TIMEOUT = env_int("EMAIL_TIMEOUT", 10)
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@dsaquest.onrender.com")
 if EMAIL_USE_TLS and EMAIL_USE_SSL:
     raise ImproperlyConfigured("EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be enabled.")
+
+# Fail fast on production if SMTP is not configured
+if not DEBUG and EMAIL_BACKEND == "django.core.mail.backends.smtp.EmailBackend":
+    if not EMAIL_HOST or not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
+        raise ImproperlyConfigured(
+            "Production SMTP backend requires EMAIL_HOST, EMAIL_HOST_USER, and EMAIL_HOST_PASSWORD to be set."
+        )
+    if not (1 <= EMAIL_PORT <= 65535):
+        raise ImproperlyConfigured(f"Invalid EMAIL_PORT: {EMAIL_PORT}. Must be between 1 and 65535.")
