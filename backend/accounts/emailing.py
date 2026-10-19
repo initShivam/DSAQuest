@@ -4,6 +4,8 @@ import smtplib
 from abc import ABC, abstractmethod
 from urllib.parse import urlencode
 
+import requests
+
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
@@ -11,11 +13,6 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 
 from .tokens import email_verification_token_generator
-
-try:
-    from resend import Resend
-except ImportError:
-    Resend = None
 
 logger = logging.getLogger(__name__)
 
@@ -43,30 +40,45 @@ class SMTPProvider(BaseEmailProvider):
 
 class ResendProvider(BaseEmailProvider):
     def __init__(self):
-        if Resend is None:
-            raise ImportError("The 'resend' package is required for ResendProvider.")
-        self.client = Resend(settings.RESEND_API_KEY)
+        self.api_key = settings.RESEND_API_KEY
+        self.api_url = "https://api.resend.com/emails"
 
     def send(self, subject, message, recipient_list):
+        if not self.api_key:
+            raise EmailDeliveryError("Resend API key is missing.")
+
         try:
-            # Resend API expects 'to' as a string or list of strings
-            # We use recipient_list[0] as our logic currently sends to one user
-            params = {
+            payload = {
                 "from": settings.DEFAULT_FROM_EMAIL,
                 "to": recipient_list[0],
                 "subject": subject,
-                "html": message.replace("\n", "<br>"), # Simple conversion for HTML email
+                "html": message.replace("\n", "<br>"),
             }
-            response = self.client.emails.send(params)
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
 
-            # Resend SDK usually returns a response object or raises an exception
-            if not response or (isinstance(response, dict) and response.get("id") is None):
-                raise EmailDeliveryError("Resend API did not return a successful delivery ID.")
+            response = requests.post(
+                self.api_url,
+                json=payload,
+                headers=headers,
+                timeout=10
+            )
+            response.raise_for_status()
 
             return 1
+
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response else "Unknown"
+            logger.error(f"Resend API HTTP Error {status_code} for {recipient_list[0]}: {e}")
+            raise EmailDeliveryError(f"Resend API error ({status_code})")
+        except requests.exceptions.RequestException as e:
+            logger.exception(f"Network error calling Resend API for {recipient_list[0]}: {e}")
+            raise EmailDeliveryError(f"Network error calling Resend API")
         except Exception as e:
-            # Re-raise as EmailDeliveryError to maintain view contract
-            raise EmailDeliveryError(f"Resend API Error: {str(e)}")
+            logger.exception(f"Unexpected error during Resend API call for {recipient_list[0]}: {e}")
+            raise EmailDeliveryError(f"Unexpected error calling Resend API")
 
 def get_email_provider():
     provider = settings.EMAIL_PROVIDER.lower()
