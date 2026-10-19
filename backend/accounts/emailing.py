@@ -13,9 +13,9 @@ from django.utils.encoding import force_bytes
 from .tokens import email_verification_token_generator
 
 try:
-    import resend
+    from resend import Resend
 except ImportError:
-    resend = None
+    Resend = None
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +43,9 @@ class SMTPProvider(BaseEmailProvider):
 
 class ResendProvider(BaseEmailProvider):
     def __init__(self):
-        if resend is None:
+        if Resend is None:
             raise ImportError("The 'resend' package is required for ResendProvider.")
-        self.client = resend.Resend(settings.RESEND_API_KEY)
+        self.client = Resend(settings.RESEND_API_KEY)
 
     def send(self, subject, message, recipient_list):
         try:
