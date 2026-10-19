@@ -112,14 +112,18 @@ class ResendVerificationView(APIView):
     throttle_scope = "auth_verification"
 
     def post(self, request):
-        serializer = EmailAddressSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = User.objects.filter(email__iexact=serializer.validated_data["email"], is_active=True).first()
-        if user and not user.email_verified:
-            try:
-                send_verification_email(user)
-            except Exception:
-                logger.exception(f"Failed to send verification email to {user.email}")
+        try:
+            serializer = EmailAddressSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            user = User.objects.filter(email__iexact=serializer.validated_data["email"], is_active=True).first()
+            if user and not user.email_verified:
+                try:
+                    send_verification_email(user)
+                except Exception:
+                    logger.exception(f"Failed to send verification email to {user.email}")
+        except Exception as e:
+            logger.exception(f"Unexpected error in ResendVerificationView: {e}")
+
         return Response({"detail": "If an account needs verification, a new email will arrive shortly."})
 
 
@@ -130,14 +134,18 @@ class PasswordResetRequestView(APIView):
     throttle_scope = "auth_password_reset"
 
     def post(self, request):
-        serializer = EmailAddressSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = User.objects.filter(email__iexact=serializer.validated_data["email"], is_active=True).first()
-        if user:
-            try:
-                send_password_reset_email(user)
-            except Exception:
-                logger.exception(f"Failed to send password reset email to {user.email}")
+        try:
+            serializer = EmailAddressSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            user = User.objects.filter(email__iexact=serializer.validated_data["email"], is_active=True).first()
+            if user:
+                try:
+                    send_password_reset_email(user)
+                except Exception:
+                    logger.exception(f"Failed to send password reset email to {user.email}")
+        except Exception as e:
+            logger.exception(f"Unexpected error in PasswordResetRequestView: {e}")
+
         return Response({"detail": "If an account exists for that email, a reset link will arrive shortly."})
 
 

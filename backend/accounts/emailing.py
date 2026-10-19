@@ -41,8 +41,8 @@ def _send_email_with_error_handling(subject, message, recipient_list, email_type
         logger.info(f"{email_type} email successfully delivered to {recipient_list[0]}")
         return delivered
 
-    except (socket.timeout, smtplib.SMTPConnectError, smtplib.SMTPException) as e:
-        logger.exception(f"SMTP error during {email_type} to {recipient_list[0]}: {type(e).__name__}: {e}")
+    except (socket.timeout, smtplib.SMTPConnectError, smtplib.SMTPException, OSError) as e:
+        logger.exception(f"Network or SMTP error during {email_type} to {recipient_list[0]}: {type(e).__name__}: {e}")
         raise
     except Exception as e:
         logger.exception(f"Unexpected error during {email_type} to {recipient_list[0]}: {type(e).__name__}: {e}")
