@@ -96,7 +96,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 # Only needed on a fresh checkout:
 Copy-Item .env.example .env
-# Edit .env and set DJANGO_SECRET_KEY before continuing.
+# Edit .env and set DJANGO_SECRET_KEY plus the Gmail SMTP values before testing email flows.
 python manage.py migrate
 python manage.py seed_data
 python manage.py runserver
@@ -185,11 +185,12 @@ The backend loads `backend/.env` for local development using `python-dotenv`. Pr
 | `CORS_ALLOWED_ORIGINS` | Exact frontend origins allowed to call `/api/`. | Empty |
 | `PUBLIC_FRONTEND_URL` | HTTPS frontend origin used in verification and password-reset links. | `https://dsaquestt.vercel.app` |
 | `PASSWORD_RESET_TIMEOUT` | Lifetime of verification and password-reset links, in seconds. | `3600` |
-| `EMAIL_BACKEND` | Django email backend. Use SMTP in production. | Console in debug, SMTP otherwise |
-| `EMAIL_HOST` / `EMAIL_PORT` | SMTP server and port. | Empty / `587` |
-| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | SMTP credentials. Keep them only in Render secrets. | Empty |
-| `EMAIL_USE_TLS` / `EMAIL_USE_SSL` | SMTP transport security. Enable exactly one in production. | TLS follows debug mode / `False` |
-| `DEFAULT_FROM_EMAIL` | Sender address for verification and reset mail. | `no-reply@dsaquest.onrender.com` |
+| `EMAIL_BACKEND` | Django email backend. Use Django's SMTP backend. | `django.core.mail.backends.smtp.EmailBackend` |
+| `EMAIL_HOST` / `EMAIL_PORT` | Gmail SMTP server and submission port. | `smtp.gmail.com` / `587` |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | Gmail sender address and app password. Keep the app password only in Render secrets. | Required for SMTP delivery |
+| `EMAIL_USE_TLS` / `EMAIL_USE_SSL` | SMTP transport security. Enable exactly one. | `True` / `False` |
+| `EMAIL_TIMEOUT` | SMTP connection timeout in seconds. | `20` |
+| `DEFAULT_FROM_EMAIL` | Gmail sender address for verification and reset mail. | `EMAIL_HOST_USER` |
 
 Example PowerShell configuration:
 
@@ -352,7 +353,7 @@ From `frontend/`:
 npm run build
 ```
 
-The backend tests cover challenge idempotency, difficulty and fallback selection, duplicate completion rewards, daily-goal and streak rules, authorization, and timezone boundaries. The frontend build runs the TypeScript project checks before producing the Vite bundle.
+The backend tests cover challenge idempotency, difficulty and fallback selection, duplicate completion rewards, daily-goal and streak rules, authorization, timezone boundaries, email verification, password recovery, and SMTP failure handling. The frontend build runs the TypeScript project checks before producing the Vite bundle.
 
 ## Deployment notes
 

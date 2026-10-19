@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
@@ -22,6 +24,7 @@ from .tokens import email_verification_token_generator
 
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class RegisterView(APIView):
@@ -119,10 +122,14 @@ class ResendVerificationView(APIView):
             if user and not user.email_verified:
                 try:
                     send_verification_email(user)
-                except Exception:
-                    logger.exception(f"Failed to send verification email to {user.email}")
-        except Exception as e:
-            logger.exception(f"Unexpected error in ResendVerificationView: {e}")
+                except Exception as error:
+                    logger.exception(
+                        "Failed to send verification email, recipient_domain=%s, error_type=%s",
+                        user.email.rsplit("@", 1)[-1],
+                        type(error).__name__,
+                    )
+        except Exception as error:
+            logger.exception("Unexpected error in ResendVerificationView, error_type=%s", type(error).__name__)
 
         return Response({"detail": "If an account needs verification, a new email will arrive shortly."})
 
@@ -141,10 +148,14 @@ class PasswordResetRequestView(APIView):
             if user:
                 try:
                     send_password_reset_email(user)
-                except Exception:
-                    logger.exception(f"Failed to send password reset email to {user.email}")
-        except Exception as e:
-            logger.exception(f"Unexpected error in PasswordResetRequestView: {e}")
+                except Exception as error:
+                    logger.exception(
+                        "Failed to send password reset email, recipient_domain=%s, error_type=%s",
+                        user.email.rsplit("@", 1)[-1],
+                        type(error).__name__,
+                    )
+        except Exception as error:
+            logger.exception("Unexpected error in PasswordResetRequestView, error_type=%s", type(error).__name__)
 
         return Response({"detail": "If an account exists for that email, a reset link will arrive shortly."})
 

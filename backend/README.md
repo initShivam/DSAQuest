@@ -11,7 +11,7 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 # Only needed on a fresh checkout:
 Copy-Item .env.example .env
-# Fill in DJANGO_SECRET_KEY and database values in .env.
+# Fill in DJANGO_SECRET_KEY, database values, and Gmail SMTP values in .env.
 python manage.py migrate
 python manage.py seed_data
 python manage.py runserver
@@ -73,28 +73,29 @@ python manage.py check
 python manage.py test
 ```
 
-The test suite covers generation idempotency, difficulty/fallback selection, duplicate completion rewards, goal and streak rules, authorization, and timezone boundary behavior.
+The test suite covers generation idempotency, difficulty/fallback selection, duplicate completion rewards, goal and streak rules, authorization, timezone boundary behavior, email verification, resend delivery, password recovery, and SMTP failure handling.
 
 ## Production settings
 
 Set `DJANGO_DEBUG=False`, a strong `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS` (including `dsaquest.onrender.com`), and either `DATABASE_URL` or the `POSTGRES_*` variables. Configure `DJANGO_SECURE_SSL_REDIRECT=True`, secure cookies, HSTS, and `DJANGO_USE_HTTPS_PROXY=True` when TLS terminates at a trusted reverse proxy. The deployed settings include the known frontend origin `https://dsaquestt.vercel.app`; add any additional exact HTTPS origins through `CORS_ALLOWED_ORIGINS` and `DJANGO_CSRF_TRUSTED_ORIGINS`.
 
-Email delivery is configured through environment variables. Local development can use `django.core.mail.backends.console.EmailBackend`; production must use a real SMTP provider and must never commit its credentials:
+Email delivery uses Django's SMTP backend. Configure Gmail SMTP locally and on Render, and never commit the app password:
 
 ```text
 PUBLIC_FRONTEND_URL=https://dsaquestt.vercel.app
 PASSWORD_RESET_TIMEOUT=3600
 EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
-EMAIL_HOST=smtp.example.com
+EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587
-EMAIL_HOST_USER=<provider-user>
-EMAIL_HOST_PASSWORD=<provider-password>
+EMAIL_HOST_USER=gharkatvid1@gmail.com
+EMAIL_HOST_PASSWORD=<gmail-app-password>
 EMAIL_USE_TLS=True
 EMAIL_USE_SSL=False
-DEFAULT_FROM_EMAIL=no-reply@your-domain.example
+EMAIL_TIMEOUT=20
+DEFAULT_FROM_EMAIL=gharkatvid1@gmail.com
 ```
 
-Use either TLS or SSL, not both. Render must receive these values in its environment settings. Email delivery cannot be verified locally with the console backend; a real provider and a real mailbox are required for end-to-end production verification.
+Use either TLS or SSL, not both. Render must receive these values in its environment settings. Automated tests override Django's email backend with the in-memory backend; a real Gmail mailbox is required for end-to-end production verification.
 
 ## Render deployment
 

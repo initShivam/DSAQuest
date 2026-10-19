@@ -1,10 +1,7 @@
 import logging
 import socket
 import smtplib
-from abc import ABC, abstractmethod
 from urllib.parse import urlencode
-
-import requests
 
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
@@ -16,76 +13,44 @@ from .tokens import email_verification_token_generator
 
 logger = logging.getLogger(__name__)
 
+
 class EmailDeliveryError(Exception):
-    """Raised when the email backend accepts no recipients or API fails."""
+    """Raised when Django cannot deliver an email."""
+
     pass
 
-class BaseEmailProvider(ABC):
-    @abstractmethod
-    def send(self, subject, message, recipient_list):
-        pass
 
-class SMTPProvider(BaseEmailProvider):
-    def send(self, subject, message, recipient_list):
-        delivered = send_mail(
-            subject,
-            message,
-            settings.DEFAULT_FROM_EMAIL,
-            recipient_list,
-            fail_silently=False,
+SMTP_EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+
+
+def _recipient_domain(recipient_list):
+    if not recipient_list or "@" not in recipient_list[0]:
+        return "unknown"
+    return recipient_list[0].rsplit("@", 1)[-1]
+
+
+def _validate_email_configuration():
+    """Validate runtime email settings without exposing credential values."""
+    if settings.EMAIL_USE_TLS and settings.EMAIL_USE_SSL:
+        raise EmailDeliveryError("Email delivery is not configured correctly.")
+
+    if settings.EMAIL_BACKEND != SMTP_EMAIL_BACKEND:
+        return
+
+    missing = [
+        name
+        for name, value in (
+            ("EMAIL_HOST", settings.EMAIL_HOST),
+            ("EMAIL_HOST_USER", settings.EMAIL_HOST_USER),
+            ("EMAIL_HOST_PASSWORD", settings.EMAIL_HOST_PASSWORD),
+            ("DEFAULT_FROM_EMAIL", settings.DEFAULT_FROM_EMAIL),
         )
-        if delivered != 1:
-            raise EmailDeliveryError(f"SMTP backend accepted {delivered} recipients, expected 1.")
-        return delivered
+        if not value
+    ]
+    if missing:
+        logger.error("Email delivery is unavailable; missing setting(s): %s", ", ".join(missing))
+        raise EmailDeliveryError("Email delivery is not configured.")
 
-class ResendProvider(BaseEmailProvider):
-    def __init__(self):
-        self.api_key = settings.RESEND_API_KEY
-        self.api_url = "https://api.resend.com/emails"
-
-    def send(self, subject, message, recipient_list):
-        if not self.api_key:
-            raise EmailDeliveryError("Resend API key is missing.")
-
-        try:
-            payload = {
-                "from": settings.DEFAULT_FROM_EMAIL,
-                "to": recipient_list[0],
-                "subject": subject,
-                "html": message.replace("\n", "<br>"),
-            }
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            }
-
-            response = requests.post(
-                self.api_url,
-                json=payload,
-                headers=headers,
-                timeout=10
-            )
-            response.raise_for_status()
-
-            return 1
-
-        except requests.exceptions.HTTPError as e:
-            status_code = e.response.status_code if e.response else "Unknown"
-            logger.error(f"Resend API HTTP Error {status_code} for {recipient_list[0]}: {e}")
-            raise EmailDeliveryError(f"Resend API error ({status_code})")
-        except requests.exceptions.RequestException as e:
-            logger.exception(f"Network error calling Resend API for {recipient_list[0]}: {e}")
-            raise EmailDeliveryError(f"Network error calling Resend API")
-        except Exception as e:
-            logger.exception(f"Unexpected error during Resend API call for {recipient_list[0]}: {e}")
-            raise EmailDeliveryError(f"Unexpected error calling Resend API")
-
-def get_email_provider():
-    provider = settings.EMAIL_PROVIDER.lower()
-    if provider == "resend":
-        return ResendProvider()
-    # Default to SMTP (which includes Django's locmem/console backends)
-    return SMTPProvider()
 
 def _frontend_link(path, query):
     return f"{settings.PUBLIC_FRONTEND_URL}/{path}?{urlencode(query)}"
@@ -94,23 +59,58 @@ def _send_email_with_error_handling(subject, message, recipient_list, email_type
     """
     Internal helper to send emails with consistent error handling and logging.
     """
-    logger.info(f"Attempting to send {email_type} email to {recipient_list[0]} using provider {settings.EMAIL_PROVIDER}")
+    if not recipient_list:
+        raise EmailDeliveryError("Email delivery has no recipient.")
+
+    recipient_domain = _recipient_domain(recipient_list)
+    logger.info(
+        "Attempting to send %s email using backend=%s host=%s recipient_domain=%s",
+        email_type,
+        settings.EMAIL_BACKEND,
+        settings.EMAIL_HOST,
+        recipient_domain,
+    )
 
     try:
-        provider = get_email_provider()
-        delivered = provider.send(subject, message, recipient_list)
-        logger.info(f"{email_type} email successfully delivered to {recipient_list[0]}")
+        _validate_email_configuration()
+        delivered = send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            recipient_list,
+            fail_silently=False,
+        )
+        if delivered != len(recipient_list):
+            logger.error(
+                "%s email backend accepted %s of %s recipient(s), recipient_domain=%s",
+                email_type,
+                delivered,
+                len(recipient_list),
+                recipient_domain,
+            )
+            raise EmailDeliveryError("Email delivery was not accepted.")
+
+        logger.info("%s email successfully delivered, recipient_domain=%s", email_type, recipient_domain)
         return delivered
 
-    except (socket.timeout, smtplib.SMTPConnectError, smtplib.SMTPException, OSError) as e:
-        logger.exception(f"Network or SMTP error during {email_type} to {recipient_list[0]}: {type(e).__name__}: {e}")
+    except EmailDeliveryError:
         raise
-    except EmailDeliveryError as e:
-        logger.error(f"Delivery error during {email_type} to {recipient_list[0]}: {e}")
-        raise
-    except Exception as e:
-        logger.exception(f"Unexpected error during {email_type} to {recipient_list[0]}: {type(e).__name__}: {e}")
-        raise
+    except (socket.timeout, TimeoutError, smtplib.SMTPException, OSError) as error:
+        logger.exception(
+            "SMTP delivery failed for %s email, recipient_domain=%s, error_type=%s",
+            email_type,
+            recipient_domain,
+            type(error).__name__,
+        )
+        raise EmailDeliveryError("Email delivery failed. Please try again later.") from error
+    except Exception as error:
+        logger.exception(
+            "Unexpected email delivery failure for %s email, recipient_domain=%s, error_type=%s",
+            email_type,
+            recipient_domain,
+            type(error).__name__,
+        )
+        raise EmailDeliveryError("Email delivery failed. Please try again later.") from error
 
 def send_verification_email(user):
     uid = urlsafe_base64_encode(force_bytes(user.pk))

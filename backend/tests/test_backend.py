@@ -1,8 +1,12 @@
 from datetime import date, datetime, timedelta, timezone as datetime_timezone
 import socket
+import smtplib
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 from django.conf import settings
+from django.core.mail import get_connection
+from django.core.mail.backends.smtp import EmailBackend
 from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.http.request import validate_host
@@ -42,6 +46,29 @@ class DeploymentConfigurationTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Access-Control-Allow-Origin"], settings.FRONTEND_ORIGIN)
+
+
+class EmailConfigurationTests(SimpleTestCase):
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST="smtp.gmail.com",
+        EMAIL_PORT=587,
+        EMAIL_HOST_USER="sender@example.com",
+        EMAIL_HOST_PASSWORD="test-only-app-password",
+        EMAIL_USE_TLS=True,
+        EMAIL_USE_SSL=False,
+        EMAIL_TIMEOUT=20,
+        DEFAULT_FROM_EMAIL="sender@example.com",
+    )
+    def test_gmail_smtp_backend_uses_expected_transport_settings(self):
+        connection = get_connection()
+
+        self.assertIsInstance(connection, EmailBackend)
+        self.assertEqual(connection.host, "smtp.gmail.com")
+        self.assertEqual(connection.port, 587)
+        self.assertTrue(connection.use_tls)
+        self.assertFalse(connection.use_ssl)
+        self.assertEqual(connection.timeout, 20)
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
@@ -261,6 +288,47 @@ class BackendFlowTests(TestCase):
 
         self.assertTrue(mail.outbox[-1].to)
         self.assertIn("verify-email", mail.outbox[-1].body)
+        verification_link = next(line for line in mail.outbox[-1].body.splitlines() if "/verify-email?" in line)
+        parsed_link = urlparse(verification_link)
+        query = parse_qs(parsed_link.query)
+        self.assertEqual(parsed_link.path, "/verify-email")
+        self.assertIn("uid", query)
+        self.assertIn("token", query)
+
+        verification = APIClient().post(
+            "/api/auth/email/verify/",
+            {"uid": query["uid"][0], "token": query["token"][0]},
+            format="json",
+        )
+        self.assertEqual(verification.status_code, 200)
+        self.assertTrue(User.objects.get(pk=user.pk).email_verified)
+
+    def test_resend_verification_sends_a_new_email_with_a_generic_response(self):
+        pending = User.objects.create_user(email="resend@example.com", password="strong-password-123")
+
+        response = APIClient().post(
+            "/api/auth/email/resend/", {"email": pending.email}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("If an account needs verification", response.data["detail"])
+        from django.core import mail
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [pending.email])
+        self.assertIn("verify-email", mail.outbox[0].body)
+
+    @patch("accounts.emailing.send_mail", side_effect=smtplib.SMTPAuthenticationError(535, b"authentication failed"))
+    def test_resend_verification_keeps_delivery_failures_generic(self, _mock_send_mail):
+        pending = User.objects.create_user(email="resend-failure@example.com", password="strong-password-123")
+
+        response = APIClient().post(
+            "/api/auth/email/resend/", {"email": pending.email}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["detail"], "If an account needs verification, a new email will arrive shortly.")
+        self.assertNotIn("authentication", response.data["detail"].lower())
 
     @patch.object(RegisterView, "throttle_classes", new=[])
     @patch("accounts.views.send_verification_email", side_effect=RuntimeError("mail backend unavailable"))
@@ -274,25 +342,93 @@ class BackendFlowTests(TestCase):
         self.assertFalse(User.objects.filter(email="rollback@example.com").exists())
 
     @patch.object(RegisterView, "throttle_classes", new=[])
-    @patch("smtplib.SMTP.connect", side_effect=socket.timeout("The connection timed out"))
-    def test_registration_handles_smtp_timeout(self, _mock_connect):
-        # Force SMTP backend for this test
+    @patch("accounts.emailing.send_mail", side_effect=smtplib.SMTPAuthenticationError(535, b"authentication failed"))
+    def test_registration_handles_smtp_authentication_failure(self, _mock_send_mail):
         with override_settings(
             EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
             EMAIL_HOST="smtp.gmail.com",
             EMAIL_PORT=587,
-            EMAIL_HOST_USER="test@example.com",
-            EMAIL_HOST_PASSWORD="password",
+            EMAIL_HOST_USER="sender@example.com",
+            EMAIL_HOST_PASSWORD="test-only-app-password",
             EMAIL_USE_TLS=True,
+            EMAIL_USE_SSL=False,
+            EMAIL_TIMEOUT=20,
+            DEFAULT_FROM_EMAIL="sender@example.com",
+        ):
+            response = APIClient().post(
+                "/api/auth/register/",
+                {"email": "auth-failure@example.com", "password": "strong-password-123", "confirm_password": "strong-password-123", "display_name": "Auth Failure", "timezone": "UTC", "challenge_mode": "balanced"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 503)
+            self.assertFalse(User.objects.filter(email="auth-failure@example.com").exists())
+
+    @patch.object(RegisterView, "throttle_classes", new=[])
+    @patch("accounts.emailing.send_mail", side_effect=smtplib.SMTPConnectError(421, b"connection failed"))
+    def test_registration_handles_smtp_connection_failure(self, _mock_send_mail):
+        with override_settings(
+            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+            EMAIL_HOST="smtp.gmail.com",
+            EMAIL_PORT=587,
+            EMAIL_HOST_USER="sender@example.com",
+            EMAIL_HOST_PASSWORD="test-only-app-password",
+            EMAIL_USE_TLS=True,
+            EMAIL_USE_SSL=False,
+            EMAIL_TIMEOUT=20,
+            DEFAULT_FROM_EMAIL="sender@example.com",
+        ):
+            response = APIClient().post(
+                "/api/auth/register/",
+                {"email": "connection-failure@example.com", "password": "strong-password-123", "confirm_password": "strong-password-123", "display_name": "Connection Failure", "timezone": "UTC", "challenge_mode": "balanced"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 503)
+            self.assertFalse(User.objects.filter(email="connection-failure@example.com").exists())
+
+    @patch.object(RegisterView, "throttle_classes", new=[])
+    @patch("accounts.emailing.send_mail", side_effect=socket.timeout("The connection timed out"))
+    def test_registration_handles_smtp_timeout(self, _mock_send_mail):
+        with override_settings(
+            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+            EMAIL_HOST="smtp.gmail.com",
+            EMAIL_PORT=587,
+            EMAIL_HOST_USER="sender@example.com",
+            EMAIL_HOST_PASSWORD="test-only-app-password",
+            EMAIL_USE_TLS=True,
+            EMAIL_USE_SSL=False,
+            EMAIL_TIMEOUT=20,
+            DEFAULT_FROM_EMAIL="sender@example.com",
         ):
             response = APIClient().post(
                 "/api/auth/register/",
                 {"email": "timeout@example.com", "password": "strong-password-123", "confirm_password": "strong-password-123", "display_name": "Timeout", "timezone": "UTC", "challenge_mode": "balanced"},
                 format="json",
             )
-            # It should return 503 as per RegisterView logic when send_verification_email raises an exception
             self.assertEqual(response.status_code, 503)
             self.assertFalse(User.objects.filter(email="timeout@example.com").exists())
+
+    @patch.object(RegisterView, "throttle_classes", new=[])
+    @patch("accounts.emailing.send_mail")
+    def test_registration_handles_missing_smtp_credentials(self, mock_send_mail):
+        with override_settings(
+            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+            EMAIL_HOST="smtp.gmail.com",
+            EMAIL_PORT=587,
+            EMAIL_HOST_USER="",
+            EMAIL_HOST_PASSWORD="",
+            EMAIL_USE_TLS=True,
+            EMAIL_USE_SSL=False,
+            EMAIL_TIMEOUT=20,
+            DEFAULT_FROM_EMAIL="",
+        ):
+            response = APIClient().post(
+                "/api/auth/register/",
+                {"email": "missing-credentials@example.com", "password": "strong-password-123", "confirm_password": "strong-password-123", "display_name": "Missing Credentials", "timezone": "UTC", "challenge_mode": "balanced"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 503)
+            self.assertFalse(User.objects.filter(email="missing-credentials@example.com").exists())
+            mock_send_mail.assert_not_called()
 
 
     def test_registration_rejects_password_mismatch(self):
@@ -382,6 +518,16 @@ class BackendFlowTests(TestCase):
             ).status_code,
             400,
         )
+
+    @patch("accounts.emailing.send_mail", side_effect=socket.timeout("The connection timed out"))
+    def test_password_reset_keeps_smtp_failures_generic(self, _mock_send_mail):
+        response = APIClient().post(
+            "/api/auth/password-reset/request/", {"email": self.user.email}, format="json"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["detail"], "If an account exists for that email, a reset link will arrive shortly.")
+        self.assertNotIn("timed out", response.data["detail"].lower())
 
     @override_settings(PASSWORD_RESET_TIMEOUT=-1)
     def test_expired_password_reset_token_is_rejected(self):

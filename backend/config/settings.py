@@ -28,6 +28,16 @@ def env_int(name, default=None):
         return default
 
 
+def env_int_strict(name, default=None):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value.strip())
+    except (ValueError, TypeError):
+        raise ImproperlyConfigured(f"{name} must be an integer.")
+
+
 def env_list(name, default=""):
     return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
@@ -183,32 +193,27 @@ REST_FRAMEWORK = {
 }
 
 PASSWORD_RESET_TIMEOUT = int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600"))
-EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "smtp")
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-EMAIL_BACKEND = os.getenv(
-    "EMAIL_BACKEND",
-    "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
-)
-EMAIL_HOST = os.getenv("EMAIL_HOST", "")
-EMAIL_PORT = env_int("EMAIL_PORT", 587)
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend").strip()
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com").strip()
+EMAIL_PORT = env_int_strict("EMAIL_PORT", 587)
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "").strip()
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", default=not DEBUG)
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", default=True)
 EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", default=False)
-EMAIL_TIMEOUT = env_int("EMAIL_TIMEOUT", 10)
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@dsaquest.onrender.com")
+EMAIL_TIMEOUT = env_int_strict("EMAIL_TIMEOUT", 20)
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER).strip()
 if EMAIL_USE_TLS and EMAIL_USE_SSL:
     raise ImproperlyConfigured("EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be enabled.")
+if EMAIL_PORT is None or not (1 <= EMAIL_PORT <= 65535):
+    raise ImproperlyConfigured(f"Invalid EMAIL_PORT: {EMAIL_PORT}. Must be between 1 and 65535.")
+if EMAIL_TIMEOUT is None or EMAIL_TIMEOUT <= 0:
+    raise ImproperlyConfigured("EMAIL_TIMEOUT must be greater than zero.")
 
-# Fail fast on production if email is not configured
+# Fail fast on production if Gmail SMTP is not configured.
 if not DEBUG:
-    if EMAIL_PROVIDER == "smtp" and EMAIL_BACKEND == "django.core.mail.backends.smtp.EmailBackend":
-        if not EMAIL_HOST or not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
-            raise ImproperlyConfigured(
-                "Production SMTP backend requires EMAIL_HOST, EMAIL_HOST_USER, and EMAIL_HOST_PASSWORD to be set."
-            )
-        if not (1 <= EMAIL_PORT <= 65535):
-            raise ImproperlyConfigured(f"Invalid EMAIL_PORT: {EMAIL_PORT}. Must be between 1 and 65535.")
-    elif EMAIL_PROVIDER == "resend":
-        if not RESEND_API_KEY:
-            raise ImproperlyConfigured("Production Resend provider requires RESEND_API_KEY to be set.")
+    if EMAIL_BACKEND != "django.core.mail.backends.smtp.EmailBackend":
+        raise ImproperlyConfigured("Production email backend must be Django's SMTP EmailBackend.")
+    if not EMAIL_HOST or not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD or not DEFAULT_FROM_EMAIL:
+        raise ImproperlyConfigured(
+            "Production SMTP backend requires EMAIL_HOST, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, and DEFAULT_FROM_EMAIL."
+        )
